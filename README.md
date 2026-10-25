@@ -143,8 +143,10 @@ try {
 }
 ```
 
-- **Retried automatically:** `429` and `503` answers and network failures, up to `maxRetries` times (default 2). A
-  `Retry-After` header is honoured, up to a minute; otherwise it backs off from half a second.
+- **Retried automatically:** `429` and `503` answers and network failures, up to `maxRetries` times (default 2).
+  When the API asks for a wait (in a `Retry-After` header or the body's `retry_after_seconds`) of a minute or less,
+  the client waits that long; otherwise it backs off from half a second.
+- **Thrown at once:** a requested wait longer than a minute, for you to schedule (`retryAfterSeconds` on a 429).
 - **Never retried:** any other error.
 - **Merged person IDs** are followed to the person they now point at, and the answer's `redirected_from` names the
   ID you asked for.
@@ -163,9 +165,10 @@ new Songlinks({
 
 ## Fair use
 
-The API is free and open, and allows about 100 requests per 5 minutes from one address, across every endpoint. Please
-send a `userAgent` that names your app, keep to one request at a time per user action, and cache answers you reuse.
-Over the limit, the SDK throws a `RateLimitedError` whose `retryAfterSeconds` says when to try again; for a whole roster, see
+The API is free and open. It allows about 100 requests per 5 minutes from one address, across every endpoint, and 20
+from VPNs, proxies and hosting providers, which includes most cloud servers. Please send a `userAgent` that names your
+app, keep to one request at a time per user action, and cache answers you reuse. Over the limit, the SDK throws a
+`RateLimitedError` whose `retryAfterSeconds` is the most you need to wait; for a whole roster, see
 [bulk songwriter lookup](https://songlinks.io/bulk-songwriter-lookup).
 
 ## Links

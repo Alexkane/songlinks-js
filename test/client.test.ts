@@ -63,8 +63,8 @@ describe("requests", () => {
     const sl = new Songlinks({ fetch: f.fetch });
     await sl.writers(["00338980326", "00340247397"]);
     expect(f.calls[0].url.searchParams.get("ipi")).toBe("00338980326,00340247397");
-    expect(() => sl.writers(Array(WRITERS_MAX + 1).fill("1"))).toThrow(RangeError);
-    expect(() => sl.writers([])).toThrow(RangeError);
+    await expect(sl.writers(Array(WRITERS_MAX + 1).fill("1"))).rejects.toThrow(RangeError);
+    await expect(sl.writers([])).rejects.toThrow(RangeError);
   });
 
   it("identifies itself, with the caller's own tag appended", async () => {
@@ -177,14 +177,38 @@ describe("errors and retries", () => {
   it("an empty name or person ID is refused before any request", async () => {
     const f = scripted();
     const sl = new Songlinks({ fetch: f.fetch });
-    expect(() => sl.lookup(" ")).toThrow(RangeError);
-    expect(() => sl.person("")).toThrow(RangeError);
+    await expect(sl.lookup(" ")).rejects.toThrow(RangeError);
+    await expect(sl.person("")).rejects.toThrow(RangeError);
+    await expect(sl.writers([])).rejects.toThrow(RangeError);
     expect(f.calls).toHaveLength(0);
   });
 
   it("normalizeIpi writes a number the way the writers answer does", () => {
     expect(normalizeIpi("338980326")).toBe("00338980326");
     expect(normalizeIpi("003-389-803 26")).toBe("00338980326");
+    expect(normalizeIpi("\t003\u2013389803 26")).toBe("00338980326"); // a tab and an en dash
+    expect(normalizeIpi(" abc ")).toBe("abc"); // invalid: echoed trimmed, as the API does
+    expect(normalizeIpi("15036818.0")).toBe("15036818.0");
+    expect(normalizeIpi("123456789012")).toBe("123456789012");
+  });
+
+  it("a Retry-After header wins over the body's wait", async () => {
+    vi.useFakeTimers();
+    try {
+      const f = scripted({ status: 503, body: { retry_after_seconds: 300 }, headers: { "retry-after": "2" } }, { status: 200, body: {} });
+      const pending = new Songlinks({ fetch: f.fetch, ...fast }).version();
+      await vi.advanceTimersByTimeAsync(2_000);
+      await pending;
+      expect(f.calls).toHaveLength(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("a 503 asking for more than a minute is thrown at once", async () => {
+    const f = scripted({ status: 503, body: { error: "busy", message: "Busy." }, headers: { "retry-after": "120" } });
+    const err = await new Songlinks({ fetch: f.fetch, ...fast }).version().catch((e) => e);
+    expect([err.status, err.code, f.calls.length]).toEqual([503, "busy", 1]);
   });
 
   it("a 4xx other than 429 is never retried", async () => {

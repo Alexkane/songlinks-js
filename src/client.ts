@@ -21,7 +21,10 @@ export interface SonglinksOptions {
   fetch?: typeof fetch;
   /** How long one request may take before it is abandoned, in milliseconds. The default is 30,000. */
   timeoutMs?: number;
-  /** How many times a request is retried after a 429, a 503 or a network failure. The default is 2; 0 turns retrying off. */
+  /**
+   * How many times a request is retried after a 429, a 503 or a network failure. The default is 2; 0 turns retrying
+   * off. An answer asking for a wait longer than a minute is not retried: it is thrown at once.
+   */
   maxRetries?: number;
   /** Your app's name and version, such as `my-app/1.2`, added to each request's User-Agent after the SDK's own. */
   userAgent?: string;
@@ -83,9 +86,10 @@ export class SonglinksError extends Error {
 
 /**
  * Thrown when the API refuses a request because the caller is over a limit (HTTP 429). The public API allows about 100
- * requests per 5 minutes from one address, across every endpoint. When the API asks for a wait of a minute or less,
- * the client waits and retries by itself and throws this only when its retries run out; a longer wait is thrown at
- * once, with {@link RateLimitedError.retryAfterSeconds | retryAfterSeconds} saying when to try again.
+ * requests per 5 minutes from one address, across every endpoint, and 20 from VPNs, proxies and hosting providers
+ * (which includes most cloud servers). When the API asks for a wait of a minute or less, the client waits and retries
+ * by itself and throws this only when its retries run out; a longer wait is thrown at once, with
+ * {@link RateLimitedError.retryAfterSeconds | retryAfterSeconds} the most you need to wait.
  */
 export class RateLimitedError extends SonglinksError {
   /** How long the API asked the caller to wait, in seconds, or `null` when it did not say. */
@@ -130,14 +134,21 @@ const RETRYABLE = new Set([429, 503]);
 const MAX_WAIT_SECONDS = 60;
 
 /**
- * Writes an IPI name number the way the API's answers do: digits only, padded with leading zeros to 11. Use it to
- * match {@link Songlinks.writers}' answers to the numbers you sent.
+ * Writes an IPI name number the way {@link Songlinks.writers}' answers do, so the answers can be matched to the
+ * numbers you sent. Spaces and dashes (including the typographic dashes a spreadsheet substitutes) are dropped, and a
+ * run of 1 to 11 digits is padded with leading zeros to 11: `338980326` and `003-389-803 26` both become
+ * `00338980326`. Anything else is not an IPI name number, and is returned trimmed (to 32 characters), as the API
+ * echoes it with status `invalid`. A dot is not a separator: `15036818.0` is what a spreadsheet makes of a number read
+ * as a float, and dropping the dot would turn it into somebody else's number.
  *
  * @param ipiNameNumber - An IPI name number as you have it, such as `338980326` or `003-389-803-26`.
- * @returns The number as 11 digits, such as `00338980326`.
+ * @returns The number as 11 digits, such as `00338980326`, or the trimmed input when it is not one.
  */
 export function normalizeIpi(ipiNameNumber: string): string {
-  return ipiNameNumber.replace(/[\s-]/g, "").padStart(11, "0");
+  // The same reading as the API's own (writer/service.py ipi_key).
+  const digits = ipiNameNumber.replace(/[\s\-\u2010-\u2015\u2212]/g, "");
+  if (/^[0-9]{1,11}$/.test(digits)) return digits.padStart(11, "0");
+  return Array.from(ipiNameNumber.trim()).slice(0, 32).join("");
 }
 
 /**
@@ -182,11 +193,13 @@ export class Songlinks {
    *   with `answer: "rejected"` (code `single-token`), since one word matches too many people to group.
    * @param options - A song the writer wrote, a threshold or routes; any left out are decided by the API.
    * @returns The people the name could be, each with the registrations behind them.
-   * @throws RangeError when the name is empty.
+   * @throws RangeError, as a rejected promise, when the name is empty.
    * @throws {@link SonglinksError} when the API answers with an error, such as `invalid_request` for a threshold out
    *   of range.
    */
-  lookup(name: string, options: LookupOptions = {}): Promise<LookupResponse> {
+  // async, so a refused argument is a rejected promise like any other failure: `Promise.allSettled(names.map(...))`
+  // then records one rejection instead of the whole map throwing on the first blank name.
+  async lookup(name: string, options: LookupOptions = {}): Promise<LookupResponse> {
     if (!name.trim()) throw new RangeError("lookup() needs a name");
     const query: { [k: string]: string } = { name };
     if (options.song) query.song = options.song;
@@ -205,7 +218,7 @@ export class Songlinks {
    * @throws {@link PersonWithdrawnError} when the ID has been withdrawn.
    * @throws {@link SonglinksError} when the API answers with any other error, such as `not_found`.
    */
-  person(personId: string, options: PersonOptions = {}): Promise<PersonResponse> {
+  async person(personId: string, options: PersonOptions = {}): Promise<PersonResponse> {
     // An empty ID would ask for /v1/person/, which is a different route and answers a bare 404.
     if (!personId.trim()) throw new RangeError("person() needs a person ID");
     const query: { [k: string]: string } = {};
@@ -242,10 +255,10 @@ export class Songlinks {
    *
    * @param ipiNameNumbers - The numbers to check. Leading zeros may be left off, and spaces and dashes are ignored.
    * @returns For each distinct number, the person who holds it and a status, with totals in `summary`.
-   * @throws RangeError when the list is empty or holds more than 50 numbers.
+   * @throws RangeError, as a rejected promise, when the list is empty or holds more than 50 numbers.
    * @throws {@link SonglinksError} when the API answers with an error.
    */
-  writers(ipiNameNumbers: string[]): Promise<WritersResponse> {
+  async writers(ipiNameNumbers: string[]): Promise<WritersResponse> {
     if (ipiNameNumbers.length === 0) throw new RangeError("writers() needs at least one IPI name number");
     if (ipiNameNumbers.length > WRITERS_MAX) {
       throw new RangeError(`writers() takes at most ${WRITERS_MAX} IPI name numbers per call`);

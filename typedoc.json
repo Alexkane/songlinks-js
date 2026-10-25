@@ -1,14 +1,32 @@
 {
   "$schema": "https://typedoc.org/schema.json",
-  "entryPoints": ["src/index.ts"],
+  "entryPoints": [
+    "src/index.ts"
+  ],
   "out": "docs",
   "name": "songlinks",
   "readme": "README.md",
   "excludePrivate": true,
   "excludeInternal": true,
-  "validation": { "notExported": true, "invalidLink": true, "notDocumented": true },
+  "validation": {
+    "notExported": true,
+    "invalidLink": true,
+    "notDocumented": true
+  },
   "requiredToBeDocumented": [
-    "Class", "Constructor", "Method", "Function", "Variable", "Interface", "Property", "TypeAlias", "Accessor"
+    "Class",
+    "Constructor",
+    "Method",
+    "Function",
+    "Variable",
+    "Interface",
+    "Property",
+    "TypeAlias",
+    "Accessor"
   ],
-  "treatWarningsAsErrors": true
+  "treatWarningsAsErrors": true,
+  "sort": [
+    "source-order"
+  ],
+  "disableSources": true
 }

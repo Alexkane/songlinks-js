@@ -195,7 +195,7 @@ export class Songlinks {
    * @returns An async iterator over the person's works.
    * @throws {@link SonglinksError} when the API answers with an error while the works are read.
    */
-  async *personWorks(personId: string, pageSize: number = WORKS_PAGE_MAX): AsyncGenerator<PersonWork> {
+  async *personWorks(personId: string, pageSize: number = WORKS_PAGE_MAX): AsyncGenerator<PersonWork, void, undefined> {
     let offset: number | null | undefined = 0;
     while (offset !== null && offset !== undefined) {
       const page: PersonResponse = await this.person(personId, { worksOffset: offset, worksLimit: pageSize });

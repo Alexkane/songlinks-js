@@ -65,6 +65,9 @@ describe("requests", () => {
     expect(f.calls[0].url.searchParams.get("ipi")).toBe("00338980326,00340247397");
     await expect(sl.writers(Array(WRITERS_MAX + 1).fill("1"))).rejects.toThrow(RangeError);
     await expect(sl.writers([])).rejects.toThrow(RangeError);
+    for (const bad of ["338980326,00340247397", "338980326;1", "338980326\n1", "338980326%2C1"]) {
+      await expect(sl.writers([bad])).rejects.toThrow(RangeError);
+    }
   });
 
   it("identifies itself, with the caller's own tag appended", async () => {
@@ -188,6 +191,9 @@ describe("errors and retries", () => {
     expect(normalizeIpi("003-389-803 26")).toBe("00338980326");
     expect(normalizeIpi("\t003\u2013389803 26")).toBe("00338980326"); // a tab and an en dash
     expect(normalizeIpi(" abc ")).toBe("abc"); // invalid: echoed trimmed, as the API does
+    expect(normalizeIpi("003\u00a0389\u00a0803\u00a026")).toBe("00338980326"); // non-breaking spaces
+    expect(normalizeIpi("338980326\u3000")).toBe("00338980326"); // an ideographic space
+    expect(normalizeIpi("\ufeff338980326")).toBe("\ufeff338980326"); // a byte-order mark is not a space to the API
     expect(normalizeIpi("15036818.0")).toBe("15036818.0");
     expect(normalizeIpi("123456789012")).toBe("123456789012");
   });
@@ -209,6 +215,12 @@ describe("errors and retries", () => {
     const f = scripted({ status: 503, body: { error: "busy", message: "Busy." }, headers: { "retry-after": "120" } });
     const err = await new Songlinks({ fetch: f.fetch, ...fast }).version().catch((e) => e);
     expect([err.status, err.code, f.calls.length]).toEqual([503, "busy", 1]);
+  });
+
+  it("writers accepts a line read from a Windows file", async () => {
+    const f = scripted({ status: 200, body: { writers: [] } });
+    await new Songlinks({ fetch: f.fetch }).writers(["338980326\r"]);
+    expect(f.calls).toHaveLength(1);
   });
 
   it("a 4xx other than 429 is never retried", async () => {

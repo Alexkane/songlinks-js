@@ -134,6 +134,16 @@ const RETRYABLE = new Set([429, 503]);
 const MAX_WAIT_SECONDS = 60;
 
 /**
+ * The characters Python's `\s` matches, which the API uses to read an IPI name number. JavaScript's own `\s` differs
+ * at the edges: it matches U+FEFF (which Python keeps) and misses U+0085 and 0x1c-0x1f (which Python strips).
+ */
+const PY_SPACE = "\\t\\n\\v\\f\\r\\x1c-\\x1f \\x85\\xa0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000";
+
+function trimPy(text: string): string {
+  return text.replace(new RegExp(`^[${PY_SPACE}]+|[${PY_SPACE}]+$`, "g"), "");
+}
+
+/**
  * Writes an IPI name number the way {@link Songlinks.writers}' answers do, so the answers can be matched to the
  * numbers you sent. Spaces and dashes (including the typographic dashes a spreadsheet substitutes) are dropped, and a
  * run of 1 to 11 digits is padded with leading zeros to 11: `338980326` and `003-389-803 26` both become
@@ -146,9 +156,9 @@ const MAX_WAIT_SECONDS = 60;
  */
 export function normalizeIpi(ipiNameNumber: string): string {
   // The same reading as the API's own (writer/service.py ipi_key).
-  const digits = ipiNameNumber.replace(/[\s\-\u2010-\u2015\u2212]/g, "");
+  const digits = ipiNameNumber.replace(new RegExp(`[${PY_SPACE}\\-\\u2010-\\u2015\\u2212]`, "g"), "");
   if (/^[0-9]{1,11}$/.test(digits)) return digits.padStart(11, "0");
-  return Array.from(ipiNameNumber.trim()).slice(0, 32).join("");
+  return Array.from(trimPy(ipiNameNumber)).slice(0, 32).join("");
 }
 
 /**
@@ -255,13 +265,21 @@ export class Songlinks {
    *
    * @param ipiNameNumbers - The numbers to check. Leading zeros may be left off, and spaces and dashes are ignored.
    * @returns For each distinct number, the person who holds it and a status, with totals in `summary`.
-   * @throws RangeError, as a rejected promise, when the list is empty or holds more than 50 numbers.
+   * @throws RangeError, as a rejected promise, when the list is empty, holds more than 50 numbers, or has an entry
+   *   holding a comma, semicolon, line break or the text `%2C` (which the API would read as several numbers).
    * @throws {@link SonglinksError} when the API answers with an error.
    */
   async writers(ipiNameNumbers: string[]): Promise<WritersResponse> {
     if (ipiNameNumbers.length === 0) throw new RangeError("writers() needs at least one IPI name number");
     if (ipiNameNumbers.length > WRITERS_MAX) {
       throw new RangeError(`writers() takes at most ${WRITERS_MAX} IPI name numbers per call`);
+    }
+    for (const n of ipiNameNumbers) {
+      // The API splits its list on these, and on the text %2C, so one entry holding one would be read as several. The
+      // edges are trimmed first, as the API trims them, so a line read from a Windows file (ending "\r") passes.
+      if (/%2c|[,;\r\n]/i.test(trimPy(n))) {
+        throw new RangeError(`writers() takes one IPI name number per entry, got "${n}"`);
+      }
     }
     return this.get<WritersResponse>("/v1/writers", { ipi: ipiNameNumbers.join(",") });
   }

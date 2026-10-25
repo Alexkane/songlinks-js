@@ -12,9 +12,13 @@ with no number at all. Songlinks groups those registrations into one person, sho
 keeps apart the ones it isn't sure of.
 
 - **Free, with no key and no sign-up.**
-- **Typed end to end.** Generated from the API's own OpenAPI document.
-- **Runs anywhere `fetch` does.** Node 18+, browsers, Deno, Bun and edge runtimes, with no dependencies.
-- **Built to be called from real apps.** Typed errors, retries that honour `Retry-After`, and paging done for you.
+- **Typed end to end.** Your editor knows every field of every answer, with a description of each, taken from the
+  API's own description of itself.
+- **Runs anywhere modern JavaScript does.** Node 18+, browsers, Deno and Bun, with no other libraries needed.
+- **Built for real apps.** Clear errors, automatic retries when the API is busy, and long lists paged for you.
+
+> **New to this?** Skip to [Your first program, step by step](#your-first-program-step-by-step): it starts from
+> installing the language and ends with a working answer. The [words used here](#the-words-used-here) are explained too.
 
 ```sh
 npm install songlinks
@@ -29,13 +33,13 @@ const songlinks = new Songlinks({ userAgent: "my-app/1.0" });
 
 const answer = await songlinks.lookup("mark hoppus");
 if (answer.answer === "rejected") throw new Error(`no answer: ${answer.rejection?.code}`); // e.g. a one-word name
-const candidate = answer.candidates![0];
+const candidate = answer.candidates[0];
 console.log(candidate.persistent_id, candidate.names, candidate.works);
 // SLP-ZYM7-GD3E-S [ 'MARK HOPPUS' ] 302
 
 const person = await songlinks.person("SLP-ZYM7-GD3E-S", { worksLimit: 3 });
 console.log(person.works_list.items.map((w) => w.title));
-// [ "I MISS YOU", "ALL THE SMALL THINGS", "DOWN" ]
+// [ 'I MISS YOU', 'ALL THE SMALL THINGS', 'DOWN' ]
 
 const { writers } = await songlinks.writers(["00338980326", "00340247397"]);
 console.log(writers.map((w) => [w.name, w.person_id]));
@@ -61,6 +65,105 @@ for await (const work of songlinks.personWorks("SLP-ZYM7-GD3E-S")) {
   console.log(work.title);
 }
 ```
+
+## Your first program, step by step
+
+Never called an API from code before? This takes about five minutes.
+
+**Before you start**, you need two things:
+
+- **A terminal**, where you type commands. On a Mac, open Terminal (in Applications, then Utilities). On Windows, open
+  PowerShell from the Start menu. Type each command below on its own line and press Enter after it.
+- **A plain-text editor** for code, such as the free [Visual Studio Code](https://code.visualstudio.com). A word
+  processor (Word, or TextEdit in its usual mode) adds formatting that stops code from running.
+1. **Install Node.js** 18 or later from [nodejs.org](https://nodejs.org) (the "LTS" download). Check it worked by
+   typing `node --version` in a terminal; it prints a version such as `v22.11.0`.
+2. **Make a folder for your project** and add the SDK to it:
+
+   ```sh
+   mkdir songlinks-test
+   cd songlinks-test
+   npm init -y
+   npm pkg set type=module
+   npm install songlinks
+   ```
+
+   `npm pkg set type=module` lets your files use `import`, as every example here does.
+3. **Create a file** called `first.mjs` in the `songlinks-test` folder, in your editor, with this in it:
+
+   ```js
+   import { Songlinks } from "songlinks";
+
+   const songlinks = new Songlinks({ userAgent: "my-first-test/1.0" });
+   const answer = await songlinks.lookup(process.argv[2] ?? "mark hoppus");
+
+   if (answer.answer === "rejected") {
+     console.log("No answer, because:", answer.rejection.code);
+   } else {
+     for (const person of answer.candidates) {
+       console.log(person.persistent_id ?? "(no person ID yet)", person.names.join(", "), "(works: " + person.works + ")");
+     }
+   }
+   ```
+
+   `userAgent` names your program to the API, so a problem can be traced to it; any short name will do.
+4. **Run it**, from the same folder, with any songwriter's full name:
+
+   ```sh
+   node first.mjs "mark hoppus"
+   ```
+
+   You should see `SLP-ZYM7-GD3E-S MARK HOPPUS (works: 302)`.
+
+   **Keep the quotes** around the name: without them, only the first word is sent.
+
+   **What you might see instead:**
+   - **Several lines.** The name could belong to more than one person, so each possible person gets a line.
+   - **`(no person ID yet)`.** Songlinks found the registrations but hasn't given that person an ID yet. That is
+     normal, and the rest of the line is still the answer.
+   - **`No answer, because: single-token`.** The name is one word, such as `madonna`, which matches too many people.
+     Use the full name.
+   - **`No answer, because: no-match`.** Nothing registered is close to that name. Check the spelling.
+
+From here, the [examples](#examples) do real jobs: copy one from the
+[examples folder on GitHub](https://github.com/Alexkane/songlinks-js/tree/main/examples) into your folder. They are
+TypeScript (`.ts`) files, which Node 23.6 and later run directly (`node resolve-name.ts`); on an older Node, run
+`npx tsx resolve-name.ts`. [Reading an answer](#reading-an-answer) explains what comes back, and the
+[words used here](#the-words-used-here) are explained just below.
+
+## The words used here
+
+Music-publishing words, which you'll meet in the answers:
+
+- **Songwriter registration**: when a song is written, its publisher registers it so royalties reach the people who
+  wrote it. Each registration names the writers, as typed by whoever filed it. One songwriter can therefore appear
+  under several spellings, and two different songwriters can share a name.
+- **Record**: one of those registered writer entries: a name as it was typed, with its IPI name number if it has one,
+  and the songs (works) registered under it.
+- **IPI name number**: an 11-digit number that identifies a songwriter or publisher to collecting societies, such as
+  `00338980326`. Many records have none, and one person can have several.
+  [More about IPI name numbers](https://songlinks.io/guides/ipi-name-numbers).
+- **Work**: a song as a composition (the melody and lyrics), as opposed to a particular recording of it.
+- **ISWC**: the international code for a work, such as `T0719661581`. Not every registered work has one.
+- **Person** and **person ID**: Songlinks groups the records it judges to be one human into a person and gives them a
+  person ID, such as `SLP-ZYM7-GD3E-S`. Every person has a page, such as
+  [songlinks.io/person/SLP-ZYM7-GD3E-S](https://songlinks.io/person/SLP-ZYM7-GD3E-S).
+- **Candidate**: what a lookup by name returns: the records that name reaches, grouped into people for that one
+  question. A candidate usually matches one person ID, but it is worked out fresh each time.
+- **Evidence**: why two records were grouped: the same IPI name number, or a judgement that they are the same person
+  (for example, the same co-writers and publishers).
+- **Rejected**: a lookup that gave no candidates, with a reason, such as a one-word name (`madonna`) that matches too
+  many people to group. It is an answer, not an error.
+
+Programming words:
+
+- **API**: a service that programs talk to over the internet. The Songlinks API answers questions such as "who is
+  this songwriter?".
+- **SDK**: this library. It does the talking to the API for you, so your code calls a function instead of building
+  web requests by hand.
+- **Rate limit**: the most requests the API accepts from one internet address in a stretch of time: about 100 every
+  5 minutes, or 20 from VPNs and cloud servers. Over it, the SDK tells you how long to wait.
+- **npm**: the tool that downloads JavaScript libraries, such as this one, into your project.
 
 ## Checking a whole roster?
 
@@ -104,9 +207,7 @@ renamed so they don't shadow JavaScript's built-ins: the API's `Record` is `Look
 
 ### Reading an answer
 
-Two words come up throughout. A **person** is a songwriter Songlinks has given a person ID (`SLP-…`), with the
-registrations it holds as theirs; `person()` reads one. A **candidate** is what a lookup returns: the registrations
-that one name reaches, grouped fresh for that query.
+A **person** and a **candidate** are different things: see [the words used here](#the-words-used-here).
 
 - **A lookup candidate is not a stored person.** It is the lookup's own grouping, made for the name you asked.
   `persistent_id` is the stored person when there is exactly one. A candidate whose records belong to more than one
@@ -128,6 +229,8 @@ one to branch on), a `message` for people, and the response `body`.
 ```ts
 import { PersonWithdrawnError, RateLimitedError, SonglinksError } from "songlinks";
 
+// Continuing from the code above, where `songlinks` was created.
+const personId = "SLP-0000-0000-0"; // an ID no one holds, to see the not-found branch
 try {
   await songlinks.person(personId);
 } catch (err) {

@@ -8,7 +8,9 @@ const answer = await songlinks.lookup(process.argv[2] ?? "mark hoppus");
 
 if (answer.answer === "rejected") {
   // Not an error: the API explains why it gave no candidates, such as a name too common to group.
-  console.log("No answer:", answer.rejection?.code, "- nearest:", answer.rejection?.nearest);
+  console.log("No answer:", answer.rejection?.code);
+  // nearest suggests registered names close to the one asked, when there are any.
+  if (answer.rejection?.nearest?.length) console.log("Did you mean:", answer.rejection.nearest.join(", "));
 } else {
   for (const person of answer.candidates ?? []) {
     // persistent_id is null when no ID has been issued yet, which is common; the records are still the answer.

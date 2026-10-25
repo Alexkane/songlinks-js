@@ -3,10 +3,16 @@
   "compilerOptions": {
     "types": [
       "node"
-    ]
+    ],
+    "paths": {
+      "songlinks": [
+        "./src/index.ts"
+      ]
+    }
   },
   "include": [
     "src",
-    "test"
+    "test",
+    "examples"
   ]
 }

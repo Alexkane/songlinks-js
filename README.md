@@ -59,6 +59,24 @@ for await (const work of songlinks.personWorks("SLP-ZYM7-GD3E-S")) {
 }
 ```
 
+## Examples
+
+Runnable scripts for the jobs people use Songlinks for, each under 40 lines. Copy one and change it:
+
+| Script | What it does |
+| --- | --- |
+| [`resolve-name.ts`](examples/resolve-name.ts) | Every person a name could be, with their registrations and what joined them. |
+| [`which-namesake.ts`](examples/which-namesake.ts) | Two writers share a name: which one wrote this song? |
+| [`check-roster.ts`](examples/check-roster.ts) | A list of IPI name numbers in, CSV out: who holds each and their works. |
+| [`export-catalogue.ts`](examples/export-catalogue.ts) | Every work of a person, as CSV. |
+
+```sh
+node examples/check-roster.ts roster.txt > checked.csv
+```
+
+Node 23.6 and later run TypeScript directly; on older versions use `npx tsx`. The examples are type-checked with the
+package, so one that misreads a field fails the build.
+
 ## What it covers
 
 | Method | API | What it answers |

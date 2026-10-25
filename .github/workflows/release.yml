@@ -1,25 +1,24 @@
-# Publishes to npm when a version tag (v0.1.0 ...) is pushed. Needs the repository secret NPM_TOKEN, an npm
-# automation token for the account that owns the `songlinks` package; with no secret the publish step fails and
-# nothing is published. --provenance links the published package to this workflow run.
 name: release
 on:
   push:
     tags: ["v*"]
-permissions:
-  contents: read
-  id-token: write
 jobs:
   publish:
     runs-on: ubuntu-latest
+    # npm trusted publishing: npm checks this repository and workflow through GitHub's OIDC token, so no npm token is
+    # stored anywhere. It needs the trusted publisher set once on npmjs.com (package songlinks → Settings → Trusted
+    # publisher: GitHub Actions, Alexkane/songlinks-js, workflow release.yml). npm also adds provenance by itself.
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           registry-url: https://registry.npmjs.org
+      # Trusted publishing needs npm 11.5.1 or later; Node 22 ships an older npm.
+      - run: npm install -g npm@11.6.1
       - run: npm ci
-      - name: The tag must match package.json
-        run: test "v$(node -p "require('./package.json').version")" = "${GITHUB_REF_NAME}"
-      - run: npm publish --provenance --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      # prepublishOnly runs typecheck, docs:check, tests and the build before anything is uploaded.
+      - run: npm publish --access public

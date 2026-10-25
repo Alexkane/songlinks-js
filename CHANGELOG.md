@@ -10,6 +10,10 @@
 - A 422 says which parameter was wrong and why, instead of "HTTP 422".
 - `lookup()`, `person()` and `writers()` reject an empty argument before calling the API, as a rejected promise.
 - `normalizeIpi()` writes a number the way a writers answer does, to match answers to your list.
+- `writers()` refuses an entry holding a comma, semicolon, line break or the text `%2C`, which the API would read as
+  several numbers.
+- The README walks a beginner through a first program, with what to expect, and explains the programming and
+  music-publishing words it uses.
 
 ## 0.1.0 (unreleased)
 

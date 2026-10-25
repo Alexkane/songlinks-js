@@ -59,6 +59,13 @@ for await (const work of songlinks.personWorks("SLP-ZYM7-GD3E-S")) {
 }
 ```
 
+## Checking a whole roster?
+
+The API answers one name at a time, which suits an app. If you administer a catalogue, send us the writers instead.
+For each one we send back every registration we can group to them, across spellings, stage names and more than one IPI
+name number, with the evidence behind each join and the records we deliberately left out. See
+[bulk songwriter lookup](https://songlinks.io/bulk-songwriter-lookup), or write to alex@songlinks.to.
+
 ## Examples
 
 Runnable scripts for the jobs people use Songlinks for, each under 40 lines. Copy one and change it:
@@ -143,7 +150,8 @@ new Songlinks({
 ## Fair use
 
 The API is free and open. Please send a `userAgent` that names your app, keep to one request at a time per user
-action, and cache answers you reuse. A burst of lookups may be rate-limited.
+action, and cache answers you reuse. A burst of lookups may be rate-limited; for a whole roster, see
+[bulk songwriter lookup](https://songlinks.io/bulk-songwriter-lookup).
 
 ## Links
 

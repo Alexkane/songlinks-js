@@ -43,8 +43,8 @@ const { writers } = await songlinks.writers(["00338980326", "00340247397"]);
 Every person has a page you can link to, such as [songlinks.io/person/SLP-ZYM7-GD3E-S](https://songlinks.io/person/SLP-ZYM7-GD3E-S).
 It shows the registrations behind the person and what each join rests on.
 
-> **Beta.** Unverified machine output, from a dated snapshot of registration data (every answer's `mlc_snapshot`
-> gives its date). Some answers are wrong and some are incomplete. Not for rights or royalty decisions.
+> **Beta.** Unverified machine output, from a dated snapshot of registration data (a lookup's or a person's
+> `provenance.mlc_snapshot` gives its date, and `version()` gives the current one). Some answers are wrong and some are incomplete. Not for rights or royalty decisions.
 
 ### More
 
@@ -117,12 +117,14 @@ one to branch on), a `message` for people, and the response `body`.
 import { PersonWithdrawnError, RateLimitedError, SonglinksError } from "songlinks";
 
 try {
-  await songlinks.person("SLP-0000-0000-0");
+  await songlinks.person(personId);
 } catch (err) {
   if (err instanceof PersonWithdrawnError) {
     console.log("withdrawn", err.body); // a 410, and a valid answer to keep
   } else if (err instanceof RateLimitedError) {
     console.log("retry in", err.retryAfterSeconds, "s");
+  } else if (err instanceof SonglinksError && err.code === "not_found") {
+    console.log("no person with that ID"); // a 404, such as for SLP-0000-0000-0
   } else if (err instanceof SonglinksError) {
     console.log(err.status, err.code, err.message);
   }

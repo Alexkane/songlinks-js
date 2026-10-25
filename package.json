@@ -1,0 +1,66 @@
+{
+  "name": "songlinks",
+  "version": "0.1.0",
+  "description": "Official TypeScript/JavaScript SDK for the Songlinks API: look up a songwriter by name and get the people behind every registration.",
+  "keywords": [
+    "songlinks",
+    "songwriter",
+    "music",
+    "publishing",
+    "ipi",
+    "iswc",
+    "credits",
+    "metadata",
+    "api",
+    "sdk"
+  ],
+  "homepage": "https://songlinks.io/v1/docs",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Alexkane/songlinks-js.git"
+  },
+  "bugs": "https://github.com/Alexkane/songlinks-js/issues",
+  "license": "MIT",
+  "author": "Kane Technology Group, LLC",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md"
+  ],
+  "sideEffects": false,
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "spec:pull": "curl -sf https://songlinks.io/v1/openapi.json -o spec/openapi.json",
+    "generate": "openapi-typescript spec/openapi.json -o src/schema.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.test.json",
+    "test": "vitest run",
+    "build": "tsup",
+    "prepublishOnly": "npm run typecheck && npm test && npm run build"
+  },
+  "devDependencies": {
+    "@types/node": "20.17.6",
+    "openapi-typescript": "7.4.4",
+    "tsup": "8.3.5",
+    "typescript": "5.6.3",
+    "vitest": "2.1.8"
+  }
+}

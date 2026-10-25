@@ -7,21 +7,21 @@
 
 /** A build: the automatic run that groups records into people and issues IDs. */
 export interface BuildRef {
-    /** Identifies the build. */
+    /** The build's number. */
     build_id: number;
     /** The build's status, such as `applied`. */
     status: string;
-    /** Where it ran. */
+    /** Where the build ran, such as `production`; diagnostic. */
     environment: string;
-    /** ISO 8601. */
+    /** When the build started, as an ISO 8601 timestamp. */
     started_at?: string | null;
-    /** ISO 8601. */
+    /** When the build finished, as an ISO 8601 timestamp. */
     finished_at?: string | null;
     /** Identifies the model the build used. */
     model_version?: string | null;
     /** Identifies the code the build ran. */
     code_commit: string;
-    /** True if the build ran with uncommitted changes. */
+    /** True if the build ran with uncommitted changes; diagnostic. */
     code_dirty: boolean;
     /** The date of the registration-data release the build read, YYYY-MM-DD. Null when that load is undated: never a guess. */
     mlc_snapshot?: string | null;
@@ -39,21 +39,21 @@ export interface Cluster {
     person_state?: string | null;
     /** When a record's ID has since been merged into this one, that older ID. */
     redirected_from?: string | null;
-    /** How many member records the stored person holds; null when there is no ID. */
+    /** How many registrations the stored person holds as theirs (its member records); null when there is no ID. */
     person_records?: number | null;
     /** Member records the stored person holds that this lookup did not reach. Read the person to see them. */
     records_not_in_this_answer?: number | null;
     /** Every distinct registered name in `records`. */
     names: string[];
-    /** Every distinct society number in `records`. */
+    /** Every distinct IPI name number in `records`. */
     ipi_name_numbers: string[];
-    /** Distinct works across `records`: a work registered under two of them counts once, so this can be less than their sum. */
+    /** Distinct works across `records`: a work registered under two of them counts once, so this can be less than their sum. It counts every record this lookup grouped, so it can be more than the stored person's own `works`, which counts only the records the person ID holds. */
     works: number;
     /** The registration records grouped into this person, most works first. */
     records: LookupRecord[];
     /** One entry per pair of records joined. */
     evidence: Evidence[];
-    /** The society number most of this person's works are registered under: the one whose records hold the most works. Null when no record has one. */
+    /** The IPI name number most of this person's works are registered under: the one whose records hold the most works. Null when no record has one. */
     main_ipi_name_number?: string | null;
     /** Distinct works on the records carrying `main_ipi_name_number`. `works` minus this is how many works are held only by the person's other registrations, under another number or none. Null when `main_ipi_name_number` is. */
     works_on_main_ipi?: number | null;
@@ -61,7 +61,7 @@ export interface Cluster {
     stored_persons?: string[];
 }
 
-/** The body of a 400, 404, 500 or 503 response. It never carries detail about what failed. */
+/** The body of a 400, 404, 500 or 503 response. It never carries detail about what failed. A malformed parameter (an empty name, a threshold out of range) is answered 422 instead, with a `detail` list saying which parameter and why. */
 export interface ApiError {
     /** `too_many` or `no_numbers` (400), `not_found` (404), `internal` (500), or `not_ready` or `busy` (503). Branch on this. */
     error: string;
@@ -73,7 +73,7 @@ export interface ApiError {
 export interface Evidence {
     /** The two records joined, by `party_record_id`. */
     records: number[];
-    /** `same_ipi_name_number`: both records carry the same society number. `model`: the model judged them to be the same person. */
+    /** `same_ipi_name_number`: both records carry the same IPI name number. `model`: the model judged them to be the same person. */
     rule: string;
     /** The model's calibrated probability that the two records are one person, from 0 to 1. */
     probability?: number | null;
@@ -85,11 +85,11 @@ export interface Evidence {
 
 /** A record registered under another name next to one of this lookup's records: a stage name and a legal name, for example. A different claim from a candidate: nothing here is joined, and its works are not counted in `works`. */
 export interface Link {
-    /** The linked record. */
+    /** The linked record, by `party_record_id`. */
     party_record_id: number;
     /** The linked record's registered name. */
     name: string;
-    /** The linked record's society number, or null. */
+    /** The linked record's IPI name number, or null. */
     ipi_name_number?: string | null;
     /** `checked`: the two people share no registered work, so the link is not a co-writer's. `co-writers too`: they share works, as bandmates do, and the link is weaker. */
     grade?: string | null;
@@ -111,11 +111,11 @@ export interface Link {
 export interface LookupResponse {
     /** The question answered. */
     query: Query;
-    /** `candidates`, or `rejected`, in which case `rejection` says why. */
+    /** Either `candidates` or `rejected`. When it is `rejected`, `rejection` says why. */
     answer: string;
     /** Why the lookup stopped; null unless `answer` is `rejected`. */
     rejection?: Rejection | null;
-    /** One entry per person. */
+    /** The people the name could be, one entry each; empty when `answer` is `rejected`. */
     candidates?: Cluster[];
     /** Pairs of records held apart; never part of a candidate. */
     review?: ReviewItem[];
@@ -148,7 +148,7 @@ export interface LookupResponse {
     persons_resolved: number;
     /** Which candidates wrote the song; null unless a `song` was sent and the lookup found candidates. */
     song_match?: SongMatch | null;
-    /** Your remaining allowance; null when no per-caller limit is in force. */
+    /** Your remaining allowance; null when no per-caller limit is in force. The edge's per-address limit (about 100 requests per 5 minutes, 20 from VPNs and hosting networks) is separate and not counted here. */
     rate_limit?: RateLimit | null;
     /** What produced this answer. */
     provenance: Provenance;
@@ -196,13 +196,13 @@ export interface PersonRecord {
     key_name?: string | null;
     /** The rest of the name, usually given names. */
     names_before_key_name?: string | null;
-    /** The society (IPI) name number, or null. */
+    /** The IPI name number, or null. */
     ipi_name_number?: string | null;
     /** This record's own works, counted once each. */
     works: number;
     /** `anchor`: the record the ID was issued on. `asserted`: a member. `possible`: perhaps this person, but not a member. */
     link: string;
-    /** Why the record was linked: `same_ipi` (the same society number as a member), `ipi` (the anchor's own society number), `model` (the model's judgement), `corroborated` (confirmed by an independent outside source) or `verdict` (decided by a person). */
+    /** Why the record was linked: `same_ipi` (the same IPI name number as a member), `ipi` (the anchor's own IPI name number), `model` (the model's judgement), `corroborated` (confirmed by an independent outside source) or `verdict` (decided by a person). */
     rule: string;
     /** The model's calibrated probability, where the model was involved. */
     score?: number | null;
@@ -218,7 +218,7 @@ export interface PersonRecord {
     member_of_prerelease?: boolean | null;
 }
 
-/** A stored person: what the ID holds, not a fresh lookup. `records` are members. `possible` records are not members, are never counted, and may belong to someone else. */
+/** A stored person: what a person ID holds, not a fresh lookup. `records` are its members, the registrations the ID holds as this person's. `possible` lists registrations that may also be theirs; they are not members, are never counted in `works`, and may belong to someone else. */
 export interface PersonResponse {
     /** `SLP-XXXX-XXXX-C`; the last character is a check character. */
     person_id: string;
@@ -226,7 +226,7 @@ export interface PersonResponse {
     prerelease: boolean;
     /** `active`. `split`: part of the group was separated and this ID kept the anchor. `anchor_missing`: the anchor record is no longer in the registration data; the ID stays. */
     state: string;
-    /** What the ID qualifies on now: `same_ipi` (members share a society number), `ipi` (the anchor's society number and catalogue), `corroborated` (a member's society number confirmed by an independent outside source) or `human` (decided by a person). It can change after issue; `issued_evidence` is what it was issued on. */
+    /** What the ID qualifies on now: `same_ipi` (members share a IPI name number), `ipi` (the anchor's IPI name number and catalogue), `corroborated` (a member's IPI name number confirmed by an independent outside source) or `human` (decided by a person). It can change after issue; `issued_evidence` is what it was issued on. */
     evidence: string;
     /** What the ID was issued on, one of the `evidence` values, from its history. Null when the history does not record it. */
     issued_evidence?: string | null;
@@ -242,11 +242,11 @@ export interface PersonResponse {
     name?: string | null;
     /** Every distinct registered name among the members. */
     names: string[];
-    /** Every distinct society number among the members. */
+    /** Every distinct IPI name number among the members. */
     ipi_name_numbers: string[];
     /** Distinct works across member records; `possible` records are not counted. */
     works: number;
-    /** This person's main society number: the one on the record their ID was created around (`link` `anchor`), which never changes. Usually the number most of their works are under; a record with another number may hold more (since 2026-09-15 such a record joins only on a person's verdict; earlier IDs can hold ones the model joined, `rule` `model`). Null when no member has one. */
+    /** This person's main IPI name number: the one on the record their ID was created around (the record whose `link` is `anchor`). It never changes. It is usually, but not always, the number most of their works are under. Null when no member has one. */
     main_ipi_name_number?: string | null;
     /** Distinct works on the member records carrying `main_ipi_name_number`. `works` minus this is how many works only the person's other registrations hold. Null when `main_ipi_name_number` is. */
     works_on_main_ipi?: number | null;
@@ -258,13 +258,13 @@ export interface PersonResponse {
     works_list: WorksPage;
     /** Every change to this ID, oldest first. */
     history: PersonEvent[];
-    /** Your remaining allowance; null when no per-caller limit is in force. */
+    /** Your remaining allowance; null when no per-caller limit is in force. The edge's per-address limit (about 100 requests per 5 minutes, 20 from VPNs and hosting networks) is separate and not counted here. */
     rate_limit?: RateLimit | null;
     /** What grouped these records, and what served the response. */
     provenance: PersonProvenance;
 }
 
-/** HTTP 410: this ID was issued and later withdrawn. The number will never be issued to anyone else. */
+/** HTTP 410: this ID was issued and later withdrawn. This person ID will never be issued to anyone else. */
 export interface PersonWithdrawnResponse {
     /** The withdrawn ID. */
     person_id: string;
@@ -283,7 +283,7 @@ export interface PersonWithdrawnResponse {
     history: PersonEvent[];
 }
 
-/** One work registered under a member record. */
+/** One work registered under one or more of the person's member records (the registrations the ID holds). */
 export interface PersonWork {
     /** Identifies the work in the registration data. */
     mlc_work_id: string;
@@ -348,7 +348,7 @@ export interface RateLimited {
     limit: number;
     /** The length of the window, in seconds. */
     window_seconds: number;
-    /** How long to wait; also sent as the `Retry-After` header. */
+    /** The most you need to wait, in seconds. The API's own limit also sends it as the `Retry-After` header; the edge's per-address limit sends it only here. */
     retry_after_seconds: number;
     /** Requests counted in the current window. */
     lookups_used: number;
@@ -359,7 +359,7 @@ export interface RateLimited {
     contact: string;
 }
 
-/** One registration record: a name as it was registered, with its society number if it has one. */
+/** One registration record: a name as it was registered, with its IPI name number if it has one. */
 export interface LookupRecord {
     /** Identifies this record in the registration data. Not a person ID: one person usually has several records. */
     party_record_id: number;
@@ -369,7 +369,7 @@ export interface LookupRecord {
     key_name?: string | null;
     /** The rest of the name, usually given names. */
     names_before_key_name?: string | null;
-    /** The society (IPI) name number, or null when the record has none. */
+    /** The IPI name number, or null when the record has none. */
     ipi_name_number?: string | null;
     /** Works registered under this record. */
     works: number;
@@ -383,7 +383,7 @@ export interface LookupRecord {
 export interface Rejection {
     /** `single-token`: the name is one word, which is not searched. `no-match`: nothing matched closely enough. `publishers-only`: every match is registered only as a publisher or administrator, not as a writer. */
     code: string;
-    /** Up to five registered names closest to the one asked for, as spelling suggestions. */
+    /** Up to five registered names closest to the one asked for, as spelling suggestions; often empty. */
     nearest?: string[];
     /** For `publishers-only`, the roles of the records set aside: `publisher`, `administrator`, or both. */
     set_aside_roles?: string[];
@@ -467,7 +467,7 @@ export interface VersionResponse {
     latency_ms: number;
 }
 
-/** One page of the person's works, most-recorded first. */
+/** One page of the person's works: most-recorded first when recording counts are available (see `ordered_by`). */
 export interface WorksPage {
     /** All the person's works: distinct works across member records, a work under two of them counted once. */
     total: number;
@@ -494,11 +494,11 @@ export interface WriterAnswer {
     status: string;
     /** The person's ID, `SLP-XXXX-XXXX-C`; null unless `status` is `person`. */
     person_id?: string | null;
-    /** The name to show for the person. */
+    /** The name to show for the person; null unless `status` is `person`. */
     name?: string | null;
     /** Every distinct name the person's records are registered under, `name` first. Compare a spelling you hold against it: a spelling not in this list is not one this person is registered under. Empty unless `status` is `person`. */
     names?: string[];
-    /** Distinct works across the person's records. */
+    /** Distinct works across the person's records; null unless `status` is `person`. */
     works?: number | null;
     /** The person's main number: the one on the record their ID was created around. It can differ from `ipi_name_number`: the number sent may be a secondary one. */
     main_ipi_name_number?: string | null;

@@ -10,6 +10,7 @@ export {
   PersonWithdrawnError,
   WRITERS_MAX,
   WORKS_PAGE_MAX,
+  normalizeIpi,
 } from "./client.js";
 export type {
   SonglinksOptions,

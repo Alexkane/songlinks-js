@@ -27,17 +27,19 @@ import { Songlinks } from "songlinks";
 
 const songlinks = new Songlinks({ userAgent: "my-app/1.0" });
 
-const { candidates } = await songlinks.lookup("mark hoppus");
-console.log(candidates?.[0]);
-// { persistent_id: "SLP-ZYM7-GD3E-S", names: ["MARK HOPPUS"], ipi_name_numbers: ["00338980326"],
-//   works: 302, records: [ ...2 registrations ], evidence: [ ... ] }
+const answer = await songlinks.lookup("mark hoppus");
+if (answer.answer === "rejected") throw new Error(`no answer: ${answer.rejection?.code}`); // e.g. a one-word name
+const candidate = answer.candidates![0];
+console.log(candidate.persistent_id, candidate.names, candidate.works);
+// SLP-ZYM7-GD3E-S [ 'MARK HOPPUS' ] 302
 
 const person = await songlinks.person("SLP-ZYM7-GD3E-S", { worksLimit: 3 });
 console.log(person.works_list.items.map((w) => w.title));
 // [ "I MISS YOU", "ALL THE SMALL THINGS", "DOWN" ]
 
 const { writers } = await songlinks.writers(["00338980326", "00340247397"]);
-// one entry per IPI name number: MARK HOPPUS (SLP-ZYM7-GD3E-S), TRAVIS L BARKER (SLP-MG23-XM9B-Y)
+console.log(writers.map((w) => [w.name, w.person_id]));
+// [ [ 'MARK HOPPUS', 'SLP-ZYM7-GD3E-S' ], [ 'TRAVIS L BARKER', 'SLP-MG23-XM9B-Y' ] ]
 ```
 
 Every person has a page you can link to, such as [songlinks.io/person/SLP-ZYM7-GD3E-S](https://songlinks.io/person/SLP-ZYM7-GD3E-S).
@@ -51,7 +53,8 @@ It shows the registrations behind the person and what each join rests on.
 ```ts
 // Which of several writers with the same name wrote a song? Pass one of their songs.
 const { song_match } = await songlinks.lookup("amy allen", { song: "espresso" });
-// song_match: { match: "exact", candidates: ["c1"] }: the Amy Allen credited on that song
+// song_match: { match: "exact", candidates: ["c1"] }: the candidate whose `ref` is "c1" is the Amy Allen credited
+// on that song
 
 // Every work of a person, paged for you.
 for await (const work of songlinks.personWorks("SLP-ZYM7-GD3E-S")) {
@@ -101,10 +104,19 @@ renamed so they don't shadow JavaScript's built-ins: the API's `Record` is `Look
 
 ### Reading an answer
 
+Two words come up throughout. A **person** is a songwriter Songlinks has given a person ID (`SLP-…`), with the
+registrations it holds as theirs; `person()` reads one. A **candidate** is what a lookup returns: the registrations
+that one name reaches, grouped fresh for that query.
+
 - **A lookup candidate is not a stored person.** It is the lookup's own grouping, made for the name you asked.
   `persistent_id` is the stored person when there is exactly one. A candidate whose records belong to more than one
   stored person has no `persistent_id` and lists them in `stored_persons`. Read each record's own `persistent_id`.
+- **A candidate can count more works than its person.** "mark hoppus" reaches two registrations, 302 works between
+  them; the person `SLP-ZYM7-GD3E-S` holds one of them as theirs (294 works) and lists the other as `possible`.
+  `person()` is the authority on what an ID holds.
 - **Null is ordinary.** Many records have no person ID yet.
+- **Match a writers check by number, not position.** Repeats and two forms of one number come back as one entry, as
+  11 digits. `normalizeIpi()` turns your input into the same form.
 - **Person IDs can be prerelease.** A prerelease ID may stop resolving, or point at a different person, without notice.
   Check `prerelease` before you store one.
 
@@ -151,8 +163,9 @@ new Songlinks({
 
 ## Fair use
 
-The API is free and open. Please send a `userAgent` that names your app, keep to one request at a time per user
-action, and cache answers you reuse. A burst of lookups may be rate-limited; for a whole roster, see
+The API is free and open, and allows about 100 requests per 5 minutes from one address, across every endpoint. Please
+send a `userAgent` that names your app, keep to one request at a time per user action, and cache answers you reuse.
+Over the limit, the SDK throws a `RateLimitedError` whose `retryAfterSeconds` says when to try again; for a whole roster, see
 [bulk songwriter lookup](https://songlinks.io/bulk-songwriter-lookup).
 
 ## Links

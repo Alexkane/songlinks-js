@@ -7,6 +7,7 @@ import {
   SonglinksError,
   VERSION,
   WRITERS_MAX,
+  normalizeIpi,
 } from "../src/index.js";
 
 type Reply = { status: number; body?: unknown; headers?: { [k: string]: string } };
@@ -142,6 +143,48 @@ describe("errors and retries", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("a 429 with the wait only in its body (the edge's limit) is thrown at once when the wait is long", async () => {
+    const f = scripted({ status: 429, body: { error: "rate_limited", message: "Too many", retry_after_seconds: 300 } });
+    const err = await new Songlinks({ fetch: f.fetch, ...fast }).lookup("x y").catch((e) => e);
+    expect(err).toBeInstanceOf(RateLimitedError);
+    expect(err.retryAfterSeconds).toBe(300);
+    expect(f.calls).toHaveLength(1);
+  });
+
+  it("a 429 with a short wait in its body is waited out and retried", async () => {
+    vi.useFakeTimers();
+    try {
+      const f = scripted({ status: 429, body: { retry_after_seconds: 5 } }, { status: 200, body: { answer: "candidates" } });
+      const pending = new Songlinks({ fetch: f.fetch, ...fast }).lookup("x y");
+      await vi.advanceTimersByTimeAsync(4_999);
+      expect(f.calls).toHaveLength(1);
+      await vi.runAllTimersAsync();
+      expect((await pending).answer).toBe("candidates");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("a 422 says which parameter was wrong and why", async () => {
+    const detail = [{ loc: ["query", "threshold"], msg: "Input should be less than or equal to 0.99" }];
+    const f = scripted({ status: 422, body: { detail } });
+    const err = await new Songlinks({ fetch: f.fetch }).lookup("x y", { threshold: 2 }).catch((e) => e);
+    expect([err.code, err.message]).toEqual(["invalid_request", "threshold: Input should be less than or equal to 0.99"]);
+  });
+
+  it("an empty name or person ID is refused before any request", async () => {
+    const f = scripted();
+    const sl = new Songlinks({ fetch: f.fetch });
+    expect(() => sl.lookup(" ")).toThrow(RangeError);
+    expect(() => sl.person("")).toThrow(RangeError);
+    expect(f.calls).toHaveLength(0);
+  });
+
+  it("normalizeIpi writes a number the way the writers answer does", () => {
+    expect(normalizeIpi("338980326")).toBe("00338980326");
+    expect(normalizeIpi("003-389-803 26")).toBe("00338980326");
   });
 
   it("a 4xx other than 429 is never retried", async () => {

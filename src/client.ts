@@ -31,9 +31,16 @@ export interface SonglinksOptions {
 export interface LookupOptions {
   /** The title of a song the writer wrote. When given, the answer says which candidates hold a work with that title. */
   song?: string;
-  /** How sure the model must be before it joins two records, from 0.5 to 0.99. */
+  /**
+   * How sure Songlinks must be before it joins two records into one person, from 0.5 to 0.99. Higher joins fewer
+   * records and keeps more apart. The API's default is in {@link Songlinks.version}'s `threshold` (0.85 today).
+   */
   threshold?: number;
-  /** Extra routes to run. `["catalogue"]`, the API's default, also returns records registered under another name; `[]` skips that and the lookup is faster. */
+  /**
+   * Extra searches to run beside the name match. The one there is, `"catalogue"`, also finds records registered
+   * under another name that share the writer's catalogue, such as a stage name, and returns them in `links`. It runs
+   * by default; `[]` skips it, and the lookup is faster.
+   */
   routes?: string[];
 }
 
@@ -75,8 +82,10 @@ export class SonglinksError extends Error {
 }
 
 /**
- * Thrown when the API refuses a request because the caller is over a limit (HTTP 429). The client retries these
- * itself, waiting as long as the API asks, and throws this only when its retries run out.
+ * Thrown when the API refuses a request because the caller is over a limit (HTTP 429). The public API allows about 100
+ * requests per 5 minutes from one address, across every endpoint. When the API asks for a wait of a minute or less,
+ * the client waits and retries by itself and throws this only when its retries run out; a longer wait is thrown at
+ * once, with {@link RateLimitedError.retryAfterSeconds | retryAfterSeconds} saying when to try again.
  */
 export class RateLimitedError extends SonglinksError {
   /** How long the API asked the caller to wait, in seconds, or `null` when it did not say. */
@@ -117,6 +126,19 @@ export class PersonWithdrawnError extends SonglinksError {
 }
 
 const RETRYABLE = new Set([429, 503]);
+/** The longest wait the client sleeps through before retrying; a longer one is returned to the caller at once. */
+const MAX_WAIT_SECONDS = 60;
+
+/**
+ * Writes an IPI name number the way the API's answers do: digits only, padded with leading zeros to 11. Use it to
+ * match {@link Songlinks.writers}' answers to the numbers you sent.
+ *
+ * @param ipiNameNumber - An IPI name number as you have it, such as `338980326` or `003-389-803-26`.
+ * @returns The number as 11 digits, such as `00338980326`.
+ */
+export function normalizeIpi(ipiNameNumber: string): string {
+  return ipiNameNumber.replace(/[\s-]/g, "").padStart(11, "0");
+}
 
 /**
  * The Songlinks API client. Create one and reuse it.
@@ -156,12 +178,16 @@ export class Songlinks {
   /**
    * Looks up a songwriter by name.
    *
-   * @param name - A songwriter's full name, such as `mark hoppus`.
+   * @param name - A songwriter's full name, such as `mark hoppus`. A single word, such as `madonna`, is answered
+   *   with `answer: "rejected"` (code `single-token`), since one word matches too many people to group.
    * @param options - A song the writer wrote, a threshold or routes; any left out are decided by the API.
    * @returns The people the name could be, each with the registrations behind them.
-   * @throws {@link SonglinksError} when the API answers with an error.
+   * @throws RangeError when the name is empty.
+   * @throws {@link SonglinksError} when the API answers with an error, such as `invalid_request` for a threshold out
+   *   of range.
    */
   lookup(name: string, options: LookupOptions = {}): Promise<LookupResponse> {
+    if (!name.trim()) throw new RangeError("lookup() needs a name");
     const query: { [k: string]: string } = { name };
     if (options.song) query.song = options.song;
     if (options.threshold !== undefined) query.threshold = String(options.threshold);
@@ -180,6 +206,8 @@ export class Songlinks {
    * @throws {@link SonglinksError} when the API answers with any other error, such as `not_found`.
    */
   person(personId: string, options: PersonOptions = {}): Promise<PersonResponse> {
+    // An empty ID would ask for /v1/person/, which is a different route and answers a bare 404.
+    if (!personId.trim()) throw new RangeError("person() needs a person ID");
     const query: { [k: string]: string } = {};
     if (options.worksOffset !== undefined) query.works_offset = String(options.worksOffset);
     if (options.worksLimit !== undefined) query.works_limit = String(options.worksLimit);
@@ -208,8 +236,12 @@ export class Songlinks {
    * Checks up to 50 IPI name numbers at once. The API refuses a longer list rather than shortening it, and so does
    * this method: for more, call it once for each batch of {@link WRITERS_MAX}.
    *
-   * @param ipiNameNumbers - The numbers to check; leading zeros may be left off.
-   * @returns For each number, the stored person who holds it and a status.
+   * The answer has one entry per distinct number, in the order each was first sent, written as 11 digits. Two forms of
+   * one number (`338980326` and `00338980326`) and repeats come back as one entry, so match answers to your list by
+   * number, not by position: {@link normalizeIpi} turns your input into the form the answer uses.
+   *
+   * @param ipiNameNumbers - The numbers to check. Leading zeros may be left off, and spaces and dashes are ignored.
+   * @returns For each distinct number, the person who holds it and a status, with totals in `summary`.
    * @throws RangeError when the list is empty or holds more than 50 numbers.
    * @throws {@link SonglinksError} when the API answers with an error.
    */
@@ -252,8 +284,11 @@ export class Songlinks {
       }
       if (response.ok) return (await response.json()) as T;
       const body: unknown = await response.json().catch(() => null);
-      const retryAfter = parseRetryAfter(response.headers.get("retry-after"));
-      if (RETRYABLE.has(response.status) && attempt < this.maxRetries) {
+      const retryAfter = retryAfterOf(response.headers.get("retry-after"), body);
+      // A wait longer than a minute (the edge's rate limit asks for up to five) is the caller's to schedule, not
+      // something to block on inside one call, so it is returned at once.
+      const waitable = retryAfter === null || retryAfter <= MAX_WAIT_SECONDS;
+      if (RETRYABLE.has(response.status) && attempt < this.maxRetries && waitable) {
         await sleep(backoff(attempt, retryAfter));
         continue;
       }
@@ -264,25 +299,38 @@ export class Songlinks {
 
 function toError(status: number, body: unknown, retryAfter: number | null): SonglinksError {
   const b = (body ?? {}) as { error?: unknown; message?: unknown; detail?: unknown };
-  const message = typeof b.message === "string" ? b.message : `HTTP ${status}`;
+  let message = typeof b.message === "string" ? b.message : `HTTP ${status}`;
+  // 422 is FastAPI's validation answer: no `error` or `message`, but a `detail` list saying which parameter was wrong
+  // and why. Its first entry becomes the message, so `threshold: 2` reads "threshold: Input should be less than or
+  // equal to 0.99" rather than "HTTP 422".
+  if (status === 422 && Array.isArray(b.detail) && b.detail.length) {
+    const d = b.detail[0] as { loc?: unknown; msg?: unknown };
+    const where = Array.isArray(d.loc) ? d.loc[d.loc.length - 1] : undefined;
+    if (typeof d.msg === "string") message = where ? `${where}: ${d.msg}` : d.msg;
+  }
   if (status === 429) return new RateLimitedError(status, message, body, retryAfter);
   if (status === 410 && body && typeof body === "object" && "person_id" in body) {
     return new PersonWithdrawnError(body as PersonWithdrawnResponse);
   }
-  // 422 is FastAPI's validation answer, with `detail` rather than `error`.
   const code = typeof b.error === "string" ? b.error : status === 422 ? "invalid_request" : `http_${status}`;
   return new SonglinksError(status, code, message, body);
 }
 
-function parseRetryAfter(value: string | null): number | null {
-  if (!value) return null;
-  const seconds = Number(value);
-  return Number.isFinite(seconds) && seconds >= 0 ? seconds : null;
+/**
+ * The wait the API asked for, in seconds: the Retry-After header, or else the body's `retry_after_seconds`. The edge's
+ * rate limit answers with the body only (its 429 carries no header), so reading the header alone would retry a
+ * five-minute limit after half a second.
+ */
+function retryAfterOf(header: string | null, body: unknown): number | null {
+  const fromHeader = header ? Number(header) : NaN;
+  if (Number.isFinite(fromHeader) && fromHeader >= 0) return fromHeader;
+  const fromBody = (body as { retry_after_seconds?: unknown } | null)?.retry_after_seconds;
+  return typeof fromBody === "number" && fromBody >= 0 ? fromBody : null;
 }
 
-/** Retry-After when the API gives one (capped at a minute), else 0.5 s, 1 s, 2 s ... with jitter. */
+/** The API's requested wait when it gives one, else 0.5 s, 1 s, 2 s ... with jitter. */
 function backoff(attempt: number, retryAfterSeconds: number | null): number {
-  if (retryAfterSeconds !== null) return Math.min(retryAfterSeconds, 60) * 1000;
+  if (retryAfterSeconds !== null) return retryAfterSeconds * 1000;
   return 500 * 2 ** attempt * (0.75 + Math.random() * 0.5);
 }
 

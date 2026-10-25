@@ -15,7 +15,7 @@
 - The README walks a beginner through a first program, with what to expect, and explains the programming and
   music-publishing words it uses.
 
-## 0.1.0 (unreleased)
+## 0.1.0
 
 The first release, against Songlinks API 0.11.0.
 

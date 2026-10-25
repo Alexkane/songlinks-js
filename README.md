@@ -1,38 +1,59 @@
 # songlinks
 
-The official TypeScript and JavaScript SDK for the [Songlinks API](https://songlinks.io/v1/docs).
+[![npm](https://img.shields.io/npm/v/songlinks.svg)](https://www.npmjs.com/package/songlinks)
+[![ci](https://github.com/Alexkane/songlinks-js/actions/workflows/ci.yml/badge.svg)](https://github.com/Alexkane/songlinks-js/actions/workflows/ci.yml)
+[![licence: MIT](https://img.shields.io/badge/licence-MIT-blue.svg)](LICENSE)
 
-Look up a songwriter by name and get back the people who write under it: registration records grouped into one
-person each, the evidence for every grouping, and a person ID where one has been issued.
+**Find the songwriter behind a name.** The official TypeScript and JavaScript SDK for
+[Songlinks](https://songlinks.io).
 
-> **Beta.** Unverified machine output, from a dated snapshot of registration data (every answer's `mlc_snapshot`
-> gives its date). Some answers are wrong and some are incomplete. Not for rights or royalty decisions.
+One songwriter is rarely one record. They're registered under different spellings, under several IPI name numbers, or
+with no number at all. Songlinks groups those registrations into one person, shows the evidence for every join, and
+keeps apart the ones it isn't sure of.
+
+- **Free, with no key and no sign-up.**
+- **Typed end to end.** Generated from the API's own OpenAPI document.
+- **Runs anywhere `fetch` does.** Node 18+, browsers, Deno, Bun and edge runtimes, with no dependencies.
+- **Built to be called from real apps.** Typed errors, retries that honour `Retry-After`, and paging done for you.
 
 ```sh
 npm install songlinks
 ```
 
-No API key and no sign-up. It runs anywhere with a global `fetch`: Node 18+, browsers, Deno, Bun and edge runtimes.
-It has no runtime dependencies.
-
-## Quick start
+## Thirty seconds
 
 ```ts
 import { Songlinks } from "songlinks";
 
-const songlinks = new Songlinks();
+const songlinks = new Songlinks({ userAgent: "my-app/1.0" });
 
-// The people a name could be, each with the registrations behind them.
-const answer = await songlinks.lookup("mark hoppus");
-for (const person of answer.candidates ?? []) {
-  console.log(person.persistent_id, person.names, person.works);
-}
+const { candidates } = await songlinks.lookup("mark hoppus");
+console.log(candidates?.[0]);
+// { persistent_id: "SLP-ZYM7-GD3E-S", names: ["MARK HOPPUS"], ipi_name_numbers: ["00338980326"],
+//   works: 302, records: [ ...2 registrations ], evidence: [ ... ] }
 
-// A person by ID, with their works one page at a time.
-const person = await songlinks.person("SLP-ZYM7-GD3E-S", { worksLimit: 50 });
-console.log(person.name, person.works);
+const person = await songlinks.person("SLP-ZYM7-GD3E-S", { worksLimit: 3 });
+console.log(person.works_list.items.map((w) => w.title));
+// [ "I MISS YOU", "ALL THE SMALL THINGS", "DOWN" ]
 
-// Or every work, paged for you.
+const { writers } = await songlinks.writers(["00338980326", "00340247397"]);
+// one entry per IPI name number: MARK HOPPUS (SLP-ZYM7-GD3E-S), TRAVIS L BARKER (SLP-MG23-XM9B-Y)
+```
+
+Every person has a page you can link to, such as [songlinks.io/person/SLP-ZYM7-GD3E-S](https://songlinks.io/person/SLP-ZYM7-GD3E-S).
+It shows the registrations behind the person and what each join rests on.
+
+> **Beta.** Unverified machine output, from a dated snapshot of registration data (every answer's `mlc_snapshot`
+> gives its date). Some answers are wrong and some are incomplete. Not for rights or royalty decisions.
+
+### More
+
+```ts
+// Which of several writers with the same name wrote a song? Pass one of their songs.
+const { song_match } = await songlinks.lookup("amy allen", { song: "espresso" });
+// song_match: { match: "exact", candidates: ["c1"] }: the Amy Allen credited on that song
+
+// Every work of a person, paged for you.
 for await (const work of songlinks.personWorks("SLP-ZYM7-GD3E-S")) {
   console.log(work.title);
 }
@@ -104,6 +125,14 @@ new Songlinks({
 
 The API is free and open. Please send a `userAgent` that names your app, keep to one request at a time per user
 action, and cache answers you reuse. A burst of lookups may be rate-limited.
+
+## Links
+
+- [API reference](https://songlinks.io/v1/docs), with every endpoint runnable from the page.
+- [How Songlinks decides](https://songlinks.io/about): what a person ID is, and how registrations are grouped.
+- [MCP server](https://songlinks.io/mcp-server): the same answers inside Claude or any MCP client.
+- Something wrong in an answer? [Open an issue](https://github.com/Alexkane/songlinks-js/issues), or write to
+  alex@songlinks.to.
 
 ## Development
 

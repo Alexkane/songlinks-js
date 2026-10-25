@@ -1,7 +1,7 @@
 {
   "name": "songlinks",
-  "version": "0.1.0",
-  "description": "Official TypeScript/JavaScript SDK for the Songlinks API: look up a songwriter by name and get the people behind every registration.",
+  "version": "0.1.1",
+  "description": "Official TypeScript/JavaScript SDK for the Songlinks API: look up a songwriter by name or IPI name number and get the person behind every registration, with their works and ISWCs.",
   "keywords": [
     "songlinks",
     "songwriter",
@@ -12,7 +12,13 @@
     "credits",
     "metadata",
     "api",
-    "sdk"
+    "sdk",
+    "ipi name number",
+    "songwriter lookup",
+    "music publishing",
+    "mlc",
+    "royalties",
+    "typescript"
   ],
   "homepage": "https://songlinks.io/v1/docs",
   "repository": {

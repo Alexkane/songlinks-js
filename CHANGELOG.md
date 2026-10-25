@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.1
+
+- Runnable examples for the common jobs, linked from the README.
+- Response types documented as named interfaces, fields in the API's order.
+- The package description says what the SDK looks up: names and IPI name numbers.
+
 ## 0.1.0 (unreleased)
 
 The first release, against Songlinks API 0.11.0.

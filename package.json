@@ -1,6 +1,6 @@
 {
   "name": "songlinks",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Official TypeScript/JavaScript SDK for the Songlinks API: look up a songwriter by name or IPI name number and get the person behind every registration, with their works and ISWCs.",
   "keywords": [
     "songlinks",

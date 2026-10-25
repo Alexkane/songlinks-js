@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.2
+
+- Field documentation regenerated from the API's current description of itself: "IPI name number" throughout, what
+  a person's member records are, why a lookup candidate can count more works than its person, and the edge's rate
+  limit.
+
 ## 0.1.1
 
 - Runnable examples for the common jobs, linked from the README.

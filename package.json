@@ -50,16 +50,19 @@
   },
   "scripts": {
     "spec:pull": "curl -sf https://songlinks.io/v1/openapi.json -o spec/openapi.json",
-    "generate": "openapi-typescript spec/openapi.json -o src/schema.ts",
+    "generate": "mkdir -p .generated && node scripts/clean-spec.mjs spec/openapi.json > .generated/openapi.json && openapi-typescript .generated/openapi.json -o src/schema.ts && node scripts/tidy-schema.mjs src/schema.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.test.json",
     "test": "vitest run",
     "build": "tsup",
-    "prepublishOnly": "npm run typecheck && npm test && npm run build"
+    "prepublishOnly": "npm run typecheck && npm run docs:check && npm test && npm run build",
+    "docs": "typedoc",
+    "docs:check": "typedoc --emit none"
   },
   "devDependencies": {
     "@types/node": "20.17.6",
     "openapi-typescript": "7.4.4",
     "tsup": "8.3.5",
+    "typedoc": "0.26.11",
     "typescript": "5.6.3",
     "vitest": "2.1.8"
   }

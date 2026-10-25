@@ -69,9 +69,10 @@ for await (const work of songlinks.personWorks("SLP-ZYM7-GD3E-S")) {
 | `writers(ipiNameNumbers)` | `GET /v1/writers` | Up to 50 IPI name numbers checked at once: the stored person behind each. |
 | `version()` | `GET /v1/version` | What is serving: the release, the model and the date of the registration data. |
 
-The types come from the API's own OpenAPI document, so a field the API documents is a field the SDK types. Every
-response type is exported (`LookupResponse`, `PersonResponse`, `WritersResponse` and the rest), and so is the whole
-generated schema as `components` and `paths`.
+The types come from the API's own OpenAPI document, so a field the API documents is a field the SDK types, with the
+API's description of it in your editor's tooltip. Every response type is exported by name (`LookupResponse`,
+`PersonResponse`, `Cluster`, `WritersResponse` and the rest), and all of them together as `components`. Two are
+renamed so they don't shadow JavaScript's built-ins: the API's `Record` is `LookupRecord` and its `Error` is `ApiError`.
 
 ### Reading an answer
 
@@ -138,9 +139,10 @@ action, and cache answers you reuse. A burst of lookups may be rate-limited.
 
 ```sh
 npm install
-npm run typecheck && npm test && npm run build
+npm run typecheck && npm run docs:check && npm test && npm run build
 SONGLINKS_LIVE=1 npm test     # three requests against the live API
 npm run spec:pull && npm run generate   # refresh the types from the API's OpenAPI document
+npm run docs                            # the API reference as HTML, in docs/
 ```
 
 ## Licence

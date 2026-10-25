@@ -1,57 +1,70 @@
-import type { components } from "./schema.js";
+import type {
+  LookupResponse,
+  PersonResponse,
+  PersonWork,
+  PersonWithdrawnResponse,
+  VersionResponse,
+  WritersResponse,
+} from "./schema.js";
 import { VERSION } from "./version.js";
-
-type Schemas = components["schemas"];
-export type LookupResponse = Schemas["LookupResponse"];
-export type PersonResponse = Schemas["PersonResponse"];
-export type PersonWithdrawnResponse = Schemas["PersonWithdrawnResponse"];
-export type PersonWork = Schemas["PersonWork"];
-export type WritersResponse = Schemas["WritersResponse"];
-export type VersionResponse = Schemas["VersionResponse"];
-export type Cluster = Schemas["Cluster"];
-export type Record = Schemas["Record"];
-export type ApiError = Schemas["Error"];
-export type RateLimited = Schemas["RateLimited"];
 
 /** The most IPI name numbers `/v1/writers` accepts in one call. */
 export const WRITERS_MAX = 50;
-/** The most works one person read returns; `personWorks()` pages through the rest. */
+/** The most works one person read returns; {@link Songlinks.personWorks} pages through the rest. */
 export const WORKS_PAGE_MAX = 200;
 
+/** Options for a {@link Songlinks} client. Every option has a default. */
 export interface SonglinksOptions {
-  /** Defaults to https://songlinks.io. */
+  /** The API's address. The default is https://songlinks.io. */
   baseUrl?: string;
-  /** A `fetch` implementation; defaults to the global one (Node 18+, browsers, Deno, Bun). */
+  /** A `fetch` implementation. The default is the global one, built into Node 18+, browsers, Deno and Bun. */
   fetch?: typeof fetch;
-  /** Abort a request after this long. Default 30 000 ms. */
+  /** How long one request may take before it is abandoned, in milliseconds. The default is 30,000. */
   timeoutMs?: number;
-  /** Retries for 429, 503 and network errors, honouring `Retry-After`. Default 2; 0 turns retrying off. */
+  /** How many times a request is retried after a 429, a 503 or a network failure. The default is 2; 0 turns retrying off. */
   maxRetries?: number;
-  /** Appended to the SDK's own User-Agent (where the runtime lets a request set one), e.g. "my-app/1.2". */
+  /** Your app's name and version, such as `my-app/1.2`, added to each request's User-Agent after the SDK's own. */
   userAgent?: string;
 }
 
+/** Options for {@link Songlinks.lookup}. Any option left out is decided by the API. */
 export interface LookupOptions {
-  /** The title of a song this writer wrote: ranks the candidates by it. */
+  /** The title of a song the writer wrote. When given, the answer says which candidates hold a work with that title. */
   song?: string;
-  /** How sure the model must be to join two records, 0.5 to 0.99. The API's default when omitted. */
+  /** How sure the model must be before it joins two records, from 0.5 to 0.99. */
   threshold?: number;
-  /** `["catalogue"]` (the API's default) fills `links`; `[]` skips it and the lookup is faster. */
+  /** Extra routes to run. `["catalogue"]`, the API's default, also returns records registered under another name; `[]` skips that and the lookup is faster. */
   routes?: string[];
 }
 
+/** Options for {@link Songlinks.person}: which page of the person's works to return. */
 export interface PersonOptions {
-  /** The position of the first work to return. */
+  /** The position of the first work to return, from 0. */
   worksOffset?: number;
-  /** How many works to return, 1 to 200. */
+  /** How many works to return, from 1 to 200. */
   worksLimit?: number;
 }
 
-/** Any answer the API gave that was not a success. `code` is the API's `error` field, the one to branch on. */
+/**
+ * Thrown when the API answers with an error. Branch on {@link SonglinksError.code | code}, the API's own error code;
+ * the message is a sentence meant for people, and its wording may change.
+ */
 export class SonglinksError extends Error {
+  /** The HTTP status of the answer, such as 404 or 503. */
   readonly status: number;
+  /** The API's error code, such as `not_found`, `busy` or `too_many`. */
   readonly code: string;
+  /** The answer's body as parsed JSON, or `null` when it had none. */
   readonly body: unknown;
+
+  /**
+   * Creates the error for one error answer.
+   *
+   * @param status - The HTTP status.
+   * @param code - The API's error code.
+   * @param message - The API's message, or a description of the failure when it sent none.
+   * @param body - The answer's body, or `null`.
+   */
   constructor(status: number, code: string, message: string, body: unknown) {
     super(message);
     this.name = "SonglinksError";
@@ -61,9 +74,22 @@ export class SonglinksError extends Error {
   }
 }
 
-/** 429: over a per-caller limit. Retried automatically up to `maxRetries`; thrown when retries run out. */
+/**
+ * Thrown when the API refuses a request because the caller is over a limit (HTTP 429). The client retries these
+ * itself, waiting as long as the API asks, and throws this only when its retries run out.
+ */
 export class RateLimitedError extends SonglinksError {
+  /** How long the API asked the caller to wait, in seconds, or `null` when it did not say. */
   readonly retryAfterSeconds: number | null;
+
+  /**
+   * Creates the error for a 429 answer.
+   *
+   * @param status - The HTTP status, 429.
+   * @param message - The API's message.
+   * @param body - The answer's body, or `null`.
+   * @param retryAfterSeconds - How long the API asked the caller to wait, or `null`.
+   */
   constructor(status: number, message: string, body: unknown, retryAfterSeconds: number | null) {
     super(status, "rate_limited", message, body);
     this.name = "RateLimitedError";
@@ -71,9 +97,19 @@ export class RateLimitedError extends SonglinksError {
   }
 }
 
-/** 410: the person ID was withdrawn. `body` says when and why, and is still a valid answer to keep. */
+/**
+ * Thrown when a person ID has been withdrawn (HTTP 410). The API still answers in full: {@link PersonWithdrawnError.body | body}
+ * says when the ID was issued and withdrawn, and gives its history. It is a valid answer to keep.
+ */
 export class PersonWithdrawnError extends SonglinksError {
+  /** The API's answer about the withdrawn ID. */
   declare readonly body: PersonWithdrawnResponse;
+
+  /**
+   * Creates the error for a 410 answer.
+   *
+   * @param body - The API's answer about the withdrawn ID.
+   */
   constructor(body: PersonWithdrawnResponse) {
     super(410, "withdrawn", `Person ${body.person_id} was withdrawn`, body);
     this.name = "PersonWithdrawnError";
@@ -82,6 +118,15 @@ export class PersonWithdrawnError extends SonglinksError {
 
 const RETRYABLE = new Set([429, 503]);
 
+/**
+ * The Songlinks API client. Create one and reuse it.
+ *
+ * @example
+ * ```ts
+ * const songlinks = new Songlinks({ userAgent: "my-app/1.0" });
+ * const answer = await songlinks.lookup("mark hoppus");
+ * ```
+ */
 export class Songlinks {
   private readonly baseUrl: string;
   private readonly fetchImpl: typeof fetch;
@@ -89,6 +134,12 @@ export class Songlinks {
   private readonly maxRetries: number;
   private readonly userAgent: string;
 
+  /**
+   * Creates a client.
+   *
+   * @param options - The address, `fetch`, timeout, retries and User-Agent to use; each has a default.
+   * @throws Error when no `fetch` is available and none was given.
+   */
   constructor(options: SonglinksOptions = {}) {
     this.baseUrl = (options.baseUrl ?? "https://songlinks.io").replace(/\/+$/, "");
     const f = options.fetch ?? globalThis.fetch;
@@ -102,7 +153,14 @@ export class Songlinks {
     this.userAgent = `songlinks-js/${VERSION}` + (options.userAgent ? ` ${options.userAgent}` : "");
   }
 
-  /** Look up a songwriter by name: the people the name could be, with the registrations behind each. */
+  /**
+   * Looks up a songwriter by name.
+   *
+   * @param name - A songwriter's full name, such as `mark hoppus`.
+   * @param options - A song the writer wrote, a threshold or routes; any left out are decided by the API.
+   * @returns The people the name could be, each with the registrations behind them.
+   * @throws {@link SonglinksError} when the API answers with an error.
+   */
   lookup(name: string, options: LookupOptions = {}): Promise<LookupResponse> {
     const query: { [k: string]: string } = { name };
     if (options.song) query.song = options.song;
@@ -112,8 +170,14 @@ export class Songlinks {
   }
 
   /**
-   * Read a person by ID (`SLP-XXXX-XXXX-C`). A merged ID is followed to the person it now points at, and the answer's
-   * `redirected_from` says so. A withdrawn ID throws `PersonWithdrawnError`, whose `body` is the API's answer.
+   * Reads a person by ID, with one page of their works. A merged ID is followed to the person it now points at, and
+   * the answer's `redirected_from` names the ID you asked for.
+   *
+   * @param personId - A person ID, such as `SLP-ZYM7-GD3E-S`.
+   * @param options - Which page of works to return; the first page when left out.
+   * @returns The stored person: their registrations, names, IPI name numbers and a page of works.
+   * @throws {@link PersonWithdrawnError} when the ID has been withdrawn.
+   * @throws {@link SonglinksError} when the API answers with any other error, such as `not_found`.
    */
   person(personId: string, options: PersonOptions = {}): Promise<PersonResponse> {
     const query: { [k: string]: string } = {};
@@ -122,7 +186,15 @@ export class Songlinks {
     return this.get<PersonResponse>(`/v1/person/${encodeURIComponent(personId)}`, query);
   }
 
-  /** Every work of a person, page by page, in the API's order. */
+  /**
+   * Reads every work of a person, in the API's order. Pages are requested only as the loop asks for more, so
+   * stopping early stops the requests.
+   *
+   * @param personId - A person ID, such as `SLP-ZYM7-GD3E-S`.
+   * @param pageSize - How many works to request at a time, from 1 to 200. The default is 200.
+   * @returns An async iterator over the person's works.
+   * @throws {@link SonglinksError} when the API answers with an error while the works are read.
+   */
   async *personWorks(personId: string, pageSize: number = WORKS_PAGE_MAX): AsyncGenerator<PersonWork> {
     let offset: number | null | undefined = 0;
     while (offset !== null && offset !== undefined) {
@@ -133,8 +205,13 @@ export class Songlinks {
   }
 
   /**
-   * Check up to 50 IPI name numbers: the stored person behind each, with a status. For more than 50, call it once per
-   * batch of `WRITERS_MAX`: the API refuses a longer list rather than truncating it, and so does this method.
+   * Checks up to 50 IPI name numbers at once. The API refuses a longer list rather than shortening it, and so does
+   * this method: for more, call it once for each batch of {@link WRITERS_MAX}.
+   *
+   * @param ipiNameNumbers - The numbers to check; leading zeros may be left off.
+   * @returns For each number, the stored person who holds it and a status.
+   * @throws RangeError when the list is empty or holds more than 50 numbers.
+   * @throws {@link SonglinksError} when the API answers with an error.
    */
   writers(ipiNameNumbers: string[]): Promise<WritersResponse> {
     if (ipiNameNumbers.length === 0) throw new RangeError("writers() needs at least one IPI name number");
@@ -144,7 +221,12 @@ export class Songlinks {
     return this.get<WritersResponse>("/v1/writers", { ipi: ipiNameNumbers.join(",") });
   }
 
-  /** What is serving: the release, the model, the code, and the date of the registration data. */
+  /**
+   * Asks what is serving.
+   *
+   * @returns The API's release, the model and code in use, and the date of the registration data.
+   * @throws {@link SonglinksError} when the API answers with an error.
+   */
   version(): Promise<VersionResponse> {
     return this.get<VersionResponse>("/v1/version", {});
   }

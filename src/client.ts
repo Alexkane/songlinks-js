@@ -3,6 +3,7 @@ import type {
   PersonResponse,
   PersonWork,
   PersonWithdrawnResponse,
+  SongwritersResponse,
   VersionResponse,
   WritersResponse,
 } from "./schema.js";
@@ -10,6 +11,8 @@ import { VERSION } from "./version.js";
 
 /** The most IPI name numbers `/v1/writers` accepts in one call. */
 export const WRITERS_MAX = 50;
+/** The most ISRCs `/v1/songwriters` accepts in one call, equal to {@link WRITERS_MAX}: one limit covers both lists. */
+export const SONGWRITERS_MAX = 50;
 /** The most works one person read returns; {@link Songlinks.personWorks} pages through the rest. */
 export const WORKS_PAGE_MAX = 200;
 
@@ -162,6 +165,28 @@ export function normalizeIpi(ipiNameNumber: string): string {
 }
 
 /**
+ * Writes an ISRC the way {@link Songlinks.songwriters}' answers do, so the answers can be matched to the codes you
+ * sent. Spaces and hyphens are dropped and letters are upper-cased: `us-mc1-99-59123` and `USMC1 99 59123` both become
+ * `USMC19959123`. An ISRC is then 12 characters: two letters, three letters or digits, and seven digits. Anything else
+ * is not an ISRC, and is returned trimmed (to 32 characters), as the API echoes it with status `invalid`. Only the
+ * plain hyphen is dropped: a code written with a typographic dash (`US–MC1–99–59123`, as some spreadsheets and word
+ * processors substitute) is `invalid` to the API, so replace those dashes before you send it.
+ *
+ * @param isrc - An ISRC as you have it, such as `USMC19959123` or `US-MC1-99-59123`.
+ * @returns The ISRC as 12 characters, such as `USMC19959123`, or the trimmed input when it is not one.
+ */
+export function normalizeIsrc(isrc: string): string {
+  // The same reading as the API's own (writer/work_pages.py isrc_key). It differs from normalizeIpi's because the
+  // API's does: only the ASCII hyphen is dropped, not the typographic dashes, so "US\u2013MC1..." (an en dash) is
+  // `invalid` there, and so it must be here too or the echo would not match.
+  // \p{Nd} because the API's pattern uses Python's \d, which matches any script's digits, not only 0-9; anything
+  // narrower would answer `invalid` for a code the API reads as an ISRC, and the two would no longer match up.
+  const code = isrc.replace(new RegExp(`[${PY_SPACE}\\-]`, "g"), "").toUpperCase();
+  if (/^[A-Z]{2}[A-Z0-9]{3}\p{Nd}{7}$/u.test(code)) return code;
+  return Array.from(trimPy(isrc)).slice(0, 32).join("");
+}
+
+/**
  * The Songlinks API client. Create one and reuse it.
  *
  * @example
@@ -282,6 +307,57 @@ export class Songlinks {
       }
     }
     return this.get<WritersResponse>("/v1/writers", { ipi: ipiNameNumbers.join(",") });
+  }
+
+  /**
+   * Finds who wrote up to 50 recordings at once, by ISRC. For each recording, the answer gives the works (songs as
+   * compositions) it is registered to, the writers registered on each work, and the Songlinks person behind each
+   * writer where there is one. The API refuses a longer list rather than shortening it, and so does this method: for
+   * more, call it once for each batch of {@link SONGWRITERS_MAX}.
+   *
+   * The answer has one entry per distinct ISRC, in the order each was first sent, written as 12 characters in upper
+   * case. Two spellings of one code (`US-MC1-99-59123` and `usmc19959123`) and repeats come back as one entry, so
+   * match answers to your list by ISRC, not by position: {@link normalizeIsrc} turns your input into the form the
+   * answer uses.
+   *
+   * Each entry's `status` is `registered` (registered to at least one work, listed in `works`), `unregistered`
+   * (registered to no work in this data; an ordinary answer, not an error) or `invalid` (not an ISRC; the entry is
+   * echoed as sent, and the rest of the list is still answered). A writer's `persistent_id` is null when their record
+   * is not part of a stored person, which is common for writers registered without an IPI name number.
+   *
+   * @param isrcs - The ISRCs to check, such as `["USMC19959123"]`. Spaces and hyphens inside a code are ignored, and
+   *   case does not matter.
+   * @returns For each distinct ISRC, a status and the works and writers it is registered to.
+   * @throws RangeError, as a rejected promise, when the list is empty, holds more than 50 ISRCs, or has an entry
+   *   holding a comma, semicolon, line break or the text `%2C` (which the API would read as several ISRCs).
+   * @throws {@link SonglinksError} when the API answers with an error.
+   *
+   * @example
+   * ```ts
+   * const { recordings } = await songlinks.songwriters(["USMC19959123"]);
+   * for (const work of recordings[0].works ?? []) {
+   *   console.log(work.title, work.writers.map((w) => w.name));
+   * }
+   * // ALL THE SMALL THINGS [ 'MARK HOPPUS', 'TRAVIS L BARKER', 'THOMAS DELONGE' ]
+   * ```
+   */
+  async songwriters(isrcs: string[]): Promise<SongwritersResponse> {
+    if (isrcs.length === 0) throw new RangeError("songwriters() needs at least one ISRC");
+    // The list's length, not its distinct codes: the API counts after folding repeats, so a list of 51 with a repeat
+    // would pass there. Refusing it here keeps the rule one a caller can check without normalising first, as
+    // writers() does.
+    if (isrcs.length > SONGWRITERS_MAX) {
+      throw new RangeError(`songwriters() takes at most ${SONGWRITERS_MAX} ISRCs per call`);
+    }
+    for (const code of isrcs) {
+      // The API splits its list on the same characters as writers(), so the same check applies, edges trimmed first
+      // so a line read from a Windows file (ending "\r") passes. A space or hyphen is not a separator for ISRCs
+      // either: it is dropped inside the code.
+      if (/%2c|[,;\r\n]/i.test(trimPy(code))) {
+        throw new RangeError(`songwriters() takes one ISRC per entry, got "${code}"`);
+      }
+    }
+    return this.get<SongwritersResponse>("/v1/songwriters", { isrc: isrcs.join(",") });
   }
 
   /**

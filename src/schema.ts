@@ -379,6 +379,44 @@ export interface LookupRecord {
     prerelease?: boolean | null;
 }
 
+/** One ISRC from the list: the works it is registered to and their writers. */
+export interface RecordingAnswer {
+    /** The ISRC as 12 characters, upper case, without dashes. For an `invalid` entry, the text as sent, cut to 32 characters. */
+    isrc: string;
+    /** `registered`: the recording is registered to at least one work. `unregistered`: it is registered to no work in this data. `invalid`: not an ISRC (two letters, three letters or digits, seven digits; dashes and spaces are ignored). */
+    status: string;
+    /** The works the recording is registered to; empty unless `status` is `registered`. */
+    works?: RecordingWork[];
+}
+
+/** One work (a song as a composition) the recording is registered to. */
+export interface RecordingWork {
+    /** The work's song code in the registration data. */
+    song_code: string;
+    /** The registered title. */
+    title?: string | null;
+    /** The work's ISWC, or null when the work has none. */
+    iswc?: string | null;
+    /** The writers registered on the work; publishers and administrators are left out. */
+    writers: RecordingWriter[];
+}
+
+/** One writer registered on a work the recording is registered to, and the person whose record it is. */
+export interface RecordingWriter {
+    /** Identifies the writer's registration record, as in a lookup's records. */
+    party_record_id: number;
+    /** The name as registered. */
+    name?: string | null;
+    /** The record's IPI name number, or null when it has none. */
+    ipi_name_number?: string | null;
+    /** The writer's role on the work, such as `ComposerLyricist`, `Composer` or `Lyricist`. */
+    role: string;
+    /** The person ID this record belongs to, `SLP-XXXX-XXXX-C`; null when the record is not part of a stored person yet. */
+    persistent_id?: string | null;
+    /** The person's page, relative to this site; null when `persistent_id` is. */
+    person_url?: string | null;
+}
+
 /** Why a lookup stopped without candidates. It comes with HTTP 200: it is an answer, not an error. */
 export interface Rejection {
     /** `single-token`: the name is one word, which is not searched. `no-match`: nothing matched closely enough. `publishers-only`: every match is registered only as a publisher or administrator, not as a writer. */
@@ -445,6 +483,14 @@ export interface SongRecord {
     ref: string;
     /** Its matching work titles, as registered; at most three. */
     titles: string[];
+}
+
+/** The writers behind a list of recordings, by ISRC, in the order sent. */
+export interface SongwritersResponse {
+    /** One entry per distinct ISRC, in the order first sent. */
+    recordings: RecordingAnswer[];
+    /** Your remaining allowance; null when no per-caller limit is in force. */
+    rate_limit?: RateLimit | null;
 }
 
 /** What is serving: the release, the model and the settings every lookup uses. */
@@ -581,6 +627,12 @@ export interface components {
         RateLimited: RateLimited;
         /** See {@link LookupRecord}. */
         Record: LookupRecord;
+        /** See {@link RecordingAnswer}. */
+        RecordingAnswer: RecordingAnswer;
+        /** See {@link RecordingWork}. */
+        RecordingWork: RecordingWork;
+        /** See {@link RecordingWriter}. */
+        RecordingWriter: RecordingWriter;
         /** See {@link Rejection}. */
         Rejection: Rejection;
         /** See {@link ReviewItem}. */
@@ -591,6 +643,8 @@ export interface components {
         SongMatch: SongMatch;
         /** See {@link SongRecord}. */
         SongRecord: SongRecord;
+        /** See {@link SongwritersResponse}. */
+        SongwritersResponse: SongwritersResponse;
         /** See {@link VersionResponse}. */
         VersionResponse: VersionResponse;
         /** See {@link WorksPage}. */

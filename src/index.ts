@@ -1,5 +1,6 @@
 /**
- * The official TypeScript and JavaScript SDK for the Songlinks API: find the songwriter behind a name.
+ * The official TypeScript and JavaScript SDK for the Songlinks API: find the songwriter behind a name, an IPI name
+ * number or a recording's ISRC.
  *
  * @packageDocumentation
  */
@@ -9,8 +10,10 @@ export {
   RateLimitedError,
   PersonWithdrawnError,
   WRITERS_MAX,
+  SONGWRITERS_MAX,
   WORKS_PAGE_MAX,
   normalizeIpi,
+  normalizeIsrc,
 } from "./client.js";
 export type {
   SonglinksOptions,
@@ -42,6 +45,10 @@ export type {
   WritersResponse,
   WriterAnswer,
   WritersSummary,
+  SongwritersResponse,
+  RecordingAnswer,
+  RecordingWork,
+  RecordingWriter,
   VersionResponse,
   ApiError,
   RateLimited,

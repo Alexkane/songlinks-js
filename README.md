@@ -4,8 +4,8 @@
 [![ci](https://github.com/Alexkane/songlinks-js/actions/workflows/ci.yml/badge.svg)](https://github.com/Alexkane/songlinks-js/actions/workflows/ci.yml)
 [![licence: MIT](https://img.shields.io/badge/licence-MIT-blue.svg)](LICENSE)
 
-**Find the songwriter behind a name.** The official TypeScript and JavaScript SDK for
-[Songlinks](https://songlinks.io).
+**Find the songwriter behind a name, an IPI name number or a recording's ISRC.** The official TypeScript and
+JavaScript SDK for [Songlinks](https://songlinks.io).
 
 One songwriter is rarely one record. They're registered under different spellings, under several IPI name numbers, or
 with no number at all. Songlinks groups those registrations into one person, shows the evidence for every join, and
@@ -44,6 +44,10 @@ console.log(person.works_list.items.map((w) => w.title));
 const { writers } = await songlinks.writers(["00338980326", "00340247397"]);
 console.log(writers.map((w) => [w.name, w.person_id]));
 // [ [ 'MARK HOPPUS', 'SLP-ZYM7-GD3E-S' ], [ 'TRAVIS L BARKER', 'SLP-MG23-XM9B-Y' ] ]
+
+const { recordings } = await songlinks.songwriters(["USMC19959123"]);
+console.log(recordings[0].works?.map((w) => [w.title, w.writers.map((x) => x.name)]));
+// [ [ 'ALL THE SMALL THINGS', [ 'MARK HOPPUS', 'TRAVIS L BARKER', 'THOMAS DELONGE' ] ] ]
 ```
 
 Every person has a page you can link to, such as [songlinks.io/person/SLP-ZYM7-GD3E-S](https://songlinks.io/person/SLP-ZYM7-GD3E-S).
@@ -65,6 +69,56 @@ for await (const work of songlinks.personWorks("SLP-ZYM7-GD3E-S")) {
   console.log(work.title);
 }
 ```
+
+## Who wrote this recording? Songwriters by ISRC
+
+Almost every released recording has an ISRC, a 12-character code such as `USMC19959123` (see
+[the words used here](#the-words-used-here)). A distributor or label assigns it when a track is released, and it
+travels with the track to every streaming service, so it is in any label's or distributor's track list.
+`songwriters()` takes up to 50 of them and answers, for each recording, the songs (works) it is registered to, who
+wrote each one, and the Songlinks person behind each writer.
+
+```ts
+// A real recording, a well-formed code no recording has (made up for this example), and a typo.
+const { recordings } = await songlinks.songwriters(["US-MC1-99-59123", "QZZZZ2600001", "nope"]);
+for (const r of recordings) {
+  console.log(r.isrc, r.status);
+  for (const work of r.works ?? []) {
+    for (const w of work.writers) console.log("  ", work.title, "|", w.name, w.ipi_name_number, w.persistent_id);
+  }
+}
+// USMC19959123 registered
+//    ALL THE SMALL THINGS | MARK HOPPUS 00338980326 SLP-ZYM7-GD3E-S
+//    ALL THE SMALL THINGS | TRAVIS L BARKER 00340247397 SLP-MG23-XM9B-Y
+//    ALL THE SMALL THINGS | THOMAS DELONGE 00338976704 SLP-MEA6-3QQJ-C
+// QZZZZ2600001 unregistered
+// nope invalid
+```
+
+Each recording comes back with one of three statuses:
+
+| `status` | What it means | `works` |
+| --- | --- | --- |
+| `registered` | The recording is linked to at least one registered work. | The works, each with its writers. |
+| `unregistered` | The code is a well-formed ISRC, but no work in the registration data Songlinks reads is linked to it. That is an ordinary answer, not an error: for example, the recording is new, or nobody has linked it to its song yet. | Empty. |
+| `invalid` | The entry is not an ISRC. `isrc` is your text as you sent it (up to 32 characters), and the rest of the list is still answered. | Empty. |
+
+Things to know:
+
+- **Spaces, hyphens and case don't matter.** `us-mc1-99-59123` and `USMC19959123` are the same recording. The answer
+  writes every ISRC as 12 upper-case characters, and repeats come back once, so **match answers to your list by ISRC,
+  not by position**: `normalizeIsrc()` turns your input into the form the answer uses. Only the plain hyphen (`-`)
+  is ignored: a typographic dash (`–`), which some spreadsheets substitute, makes the entry `invalid`.
+- **A writer's `persistent_id` can be null.** It is null when that writer's record is not part of a stored Songlinks
+  person, most often because it was registered without an IPI name number. This is common: in October 2026, about 45%
+  of registered recordings had at least one such writer. The name, role and IPI name number (where there is one) are
+  still the registration's own; there is just no person to link to yet.
+- **`person_url` is a path on songlinks.io**, such as `/person/SLP-ZYM7-GD3E-S`. Put `https://songlinks.io` in front
+  of it to make a link.
+- **Only writers are listed.** Publishers and administrators on the work are left out, and so are ownership shares.
+- **50 per call.** The SDK refuses a longer list, and an entry holding a comma, semicolon, line break or `%2C` (which
+  the API would read as several codes), before sending anything. For more, send batches of `SONGWRITERS_MAX`, as
+  [`who-wrote-these.ts`](examples/who-wrote-these.ts) does.
 
 ## Your first program, step by step
 
@@ -145,6 +199,11 @@ Music-publishing words, which you'll meet in the answers:
   [More about IPI name numbers](https://songlinks.io/guides/ipi-name-numbers).
 - **Work**: a song as a composition (the melody and lyrics), as opposed to a particular recording of it.
 - **ISWC**: the international code for a work, such as `T0719661581`. Not every registered work has one.
+- **Recording**: one particular recorded performance of a work, as released. One song can have many recordings: the
+  original, a live version, a remaster, a cover by someone else.
+- **ISRC**: the international code for a recording, such as `USMC19959123`: 12 characters, often written with dashes
+  (`US-MC1-99-59123`). An ISWC names the song as written; an ISRC names one recording of it. Each recording should be
+  linked to the work it records, which is how `songwriters()` gets from an ISRC to the people who wrote it.
 - **Person** and **person ID**: Songlinks groups the records it judges to be one human into a person and gives them a
   person ID, such as `SLP-ZYM7-GD3E-S`. Every person has a page, such as
   [songlinks.io/person/SLP-ZYM7-GD3E-S](https://songlinks.io/person/SLP-ZYM7-GD3E-S).
@@ -182,6 +241,7 @@ Runnable scripts for the jobs people use Songlinks for, each under 40 lines. Cop
 | [`which-namesake.ts`](examples/which-namesake.ts) | Two writers share a name: which one wrote this song? |
 | [`check-roster.ts`](examples/check-roster.ts) | A list of IPI name numbers in, CSV out: who holds each and their works. |
 | [`export-catalogue.ts`](examples/export-catalogue.ts) | Every work of a person, as CSV. |
+| [`who-wrote-these.ts`](examples/who-wrote-these.ts) | A list of ISRCs in, CSV out: who wrote each recording, with their IPI name numbers and person IDs. |
 
 ```sh
 node examples/check-roster.ts roster.txt > checked.csv
@@ -198,12 +258,14 @@ package, so one that misreads a field fails the build.
 | `person(id, { worksOffset?, worksLimit? })` | `GET /v1/person/{id}` | One person: their registrations, names, IPI name numbers and a page of works. |
 | `personWorks(id, pageSize?)` | `GET /v1/person/{id}` | Every work of a person, as an async iterator over the pages. |
 | `writers(ipiNameNumbers)` | `GET /v1/writers` | Up to 50 IPI name numbers checked at once: the stored person behind each. |
+| `songwriters(isrcs)` | `GET /v1/songwriters` | Up to 50 recordings by ISRC at once: the works each is registered to, their writers, and the person behind each. |
 | `version()` | `GET /v1/version` | What is serving: the release, the model and the date of the registration data. |
 
 The types come from the API's own OpenAPI document, so a field the API documents is a field the SDK types, with the
 API's description of it in your editor's tooltip. Every response type is exported by name (`LookupResponse`,
-`PersonResponse`, `Cluster`, `WritersResponse` and the rest), and all of them together as `components`. Two are
-renamed so they don't shadow JavaScript's built-ins: the API's `Record` is `LookupRecord` and its `Error` is `ApiError`.
+`PersonResponse`, `Cluster`, `WritersResponse`, `SongwritersResponse` and the rest), and all of them together as
+`components`. Two are renamed so they don't shadow JavaScript's built-ins: the API's `Record` is `LookupRecord` and its
+`Error` is `ApiError`.
 
 ### Reading an answer
 
@@ -218,6 +280,8 @@ A **person** and a **candidate** are different things: see [the words used here]
 - **Null is ordinary.** Many records have no person ID yet.
 - **Match a writers check by number, not position.** Repeats and two forms of one number come back as one entry, as
   11 digits. `normalizeIpi()` turns your input into the same form.
+- **Match a songwriters answer by ISRC, not position**, for the same reason: `normalizeIsrc()` writes your input as
+  the answer does.
 - **Person IDs can be prerelease.** A prerelease ID may stop resolving, or point at a different person, without notice.
   Check `prerelease` before you store one.
 

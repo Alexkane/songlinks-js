@@ -6,9 +6,17 @@ import {
   Songlinks,
   SonglinksError,
   VERSION,
+  SONGWRITERS_MAX,
   WRITERS_MAX,
   normalizeIpi,
+  normalizeIsrc,
+  type SongwritersResponse,
 } from "../src/index.js";
+
+/** A real production answer for `isrc=USMC19959123,nope`, 2026-10-26: one registered recording and one invalid entry. */
+const SONGWRITERS = JSON.parse(
+  readFileSync(new URL("./fixtures/songwriters.json", import.meta.url), "utf8"),
+) as SongwritersResponse;
 
 type Reply = { status: number; body?: unknown; headers?: { [k: string]: string } };
 
@@ -68,6 +76,50 @@ describe("requests", () => {
     for (const bad of ["338980326,00340247397", "338980326;1", "338980326\n1", "338980326%2C1"]) {
       await expect(sl.writers([bad])).rejects.toThrow(RangeError);
     }
+  });
+
+  it("songwriters joins the ISRCs with commas and refuses what the API would refuse or misread", async () => {
+    const f = scripted({ status: 200, body: SONGWRITERS });
+    const sl = new Songlinks({ fetch: f.fetch });
+    await sl.songwriters(["USMC19959123", "nope"]);
+    const u = f.calls[0].url;
+    expect(u.origin + u.pathname).toBe("https://songlinks.io/v1/songwriters");
+    expect(Object.fromEntries(u.searchParams)).toEqual({ isrc: "USMC19959123,nope" });
+    await expect(sl.songwriters(Array(SONGWRITERS_MAX + 1).fill("USMC19959123"))).rejects.toThrow(RangeError);
+    await expect(sl.songwriters([])).rejects.toThrow(RangeError);
+    for (const bad of ["USMC19959123,USMC19959124", "USMC19959123;x", "USMC19959123\nx", "USMC19959123%2cx"]) {
+      await expect(sl.songwriters([bad])).rejects.toThrow(RangeError);
+    }
+    expect(f.calls).toHaveLength(1);
+  });
+
+  it("songwriters takes exactly 50, and spaces, hyphens and a Windows line ending in an entry", async () => {
+    const f = scripted({ status: 200, body: SONGWRITERS }, { status: 200, body: SONGWRITERS });
+    const sl = new Songlinks({ fetch: f.fetch });
+    await sl.songwriters(Array(SONGWRITERS_MAX).fill("USMC19959123"));
+    await sl.songwriters(["US-MC1-99-59123\r", "USMC1 99 59123"]);
+    expect(f.calls).toHaveLength(2);
+    expect(f.calls[1].url.searchParams.get("isrc")).toBe("US-MC1-99-59123\r,USMC1 99 59123");
+  });
+
+  it("songwriters returns the API's answer as it came, with writers and person IDs", async () => {
+    const f = scripted({ status: 200, body: SONGWRITERS });
+    const { recordings } = await new Songlinks({ fetch: f.fetch }).songwriters(["USMC19959123", "nope"]);
+    expect(recordings.map((r) => [r.isrc, r.status])).toEqual([["USMC19959123", "registered"], ["nope", "invalid"]]);
+    const work = recordings[0].works![0];
+    expect([work.title, work.iswc]).toEqual(["ALL THE SMALL THINGS", "T0708835635"]);
+    expect(work.writers.map((w) => w.persistent_id)).toEqual(["SLP-ZYM7-GD3E-S", "SLP-MG23-XM9B-Y", "SLP-MEA6-3QQJ-C"]);
+    expect(recordings[1].works).toEqual([]);
+  });
+
+  it("songwriters passes an unregistered recording through as an answer, not an error", async () => {
+    // Production, 2026-10-26, for US-MC1-99-59123,QZZZZ2600001,nope: the dashed spelling comes back as 12 characters.
+    const body = JSON.parse(readFileSync(new URL("./fixtures/songwriters-statuses.json", import.meta.url), "utf8"));
+    const f = scripted({ status: 200, body });
+    const sent = ["US-MC1-99-59123", "QZZZZ2600001", "nope"];
+    const { recordings } = await new Songlinks({ fetch: f.fetch }).songwriters(sent);
+    expect(recordings.map((r) => r.status)).toEqual(["registered", "unregistered", "invalid"]);
+    expect(recordings.map((r) => r.isrc)).toEqual(sent.map(normalizeIsrc));
   });
 
   it("identifies itself, with the caller's own tag appended", async () => {
@@ -183,6 +235,7 @@ describe("errors and retries", () => {
     await expect(sl.lookup(" ")).rejects.toThrow(RangeError);
     await expect(sl.person("")).rejects.toThrow(RangeError);
     await expect(sl.writers([])).rejects.toThrow(RangeError);
+    await expect(sl.songwriters([])).rejects.toThrow(RangeError);
     expect(f.calls).toHaveLength(0);
   });
 
@@ -196,6 +249,22 @@ describe("errors and retries", () => {
     expect(normalizeIpi("\ufeff338980326")).toBe("\ufeff338980326"); // a byte-order mark is not a space to the API
     expect(normalizeIpi("15036818.0")).toBe("15036818.0");
     expect(normalizeIpi("123456789012")).toBe("123456789012");
+  });
+
+  it("normalizeIsrc writes a code the way the songwriters answer does", () => {
+    expect(normalizeIsrc("USMC19959123")).toBe("USMC19959123");
+    expect(normalizeIsrc("us-mc1-99-59123")).toBe("USMC19959123");
+    expect(normalizeIsrc(" USMC1 99 59123\r")).toBe("USMC19959123");
+    expect(normalizeIsrc("US\u00a0MC1\u00a099\u00a059123")).toBe("USMC19959123"); // non-breaking spaces
+    expect(normalizeIsrc(" nope ")).toBe("nope"); // invalid: echoed trimmed, as the API does
+    expect(normalizeIsrc("US\u2013MC1-99-59123")).toBe("US\u2013MC1-99-59123"); // an en dash is not dropped by the API
+    expect(normalizeIsrc("USMC1995912")).toBe("USMC1995912"); // 11 characters
+    expect(normalizeIsrc("USMC199591234")).toBe("USMC199591234"); // 13 characters
+    expect(normalizeIsrc("USMC1995912X")).toBe("USMC1995912X"); // the last seven must be digits
+    expect(normalizeIsrc("1SMC19959123")).toBe("1SMC19959123"); // the first two must be letters
+    expect(normalizeIsrc("x".repeat(40))).toBe("x".repeat(32)); // cut to 32, as the API echoes it
+    // The API's echo of the fixture's invalid entry is what normalizeIsrc gives for it.
+    expect(SONGWRITERS.recordings.map((r) => r.isrc)).toEqual(["USMC19959123", "nope"].map(normalizeIsrc));
   });
 
   it("a Retry-After header wins over the body's wait", async () => {
